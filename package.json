@@ -1,0 +1,41 @@
+{
+	"name": "sibi",
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+	},
+	"files": [
+		"build"
+	],
+	"devDependencies": {
+		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/adapter-static": "^3.0.10",
+		"@sveltejs/kit": "^2.63.0",
+		"@sveltejs/package": "^2.5.8",
+		"@sveltejs/vite-plugin-svelte": "^7.1.2",
+		"@tailwindcss/typography": "^0.5.20",
+		"@tailwindcss/vite": "^4.3.3",
+		"autoprefixer": "^10.6.1",
+		"postcss": "^8.5.28",
+		"publint": "^0.3.21",
+		"svelte": "^5.56.1",
+		"svelte-check": "^4.6.0",
+		"tailwindcss": "^4.3.3",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.16"
+	},
+	"keywords": [
+		"svelte"
+	],
+	"dependencies": {
+		"@mediapipe/tasks-vision": "^1.0.1",
+		"@tensorflow/tfjs": "^4.22.0",
+		"@tensorflow/tfjs-backend-webgl": "^4.22.0"
+	}
+}
