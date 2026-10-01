@@ -1,5 +1,5 @@
 // SIBI alphabet labels. Static SIBI covers 24 handshapes: A-I, K-Y.
-// J and Z are dynamic (motion) signs — excluded from all static models here.
+// J and Z are dynamic (motion) signs, so all static models exclude them.
 // (Full A-Z pad remains in the UI for manual simulation / language testing.)
 
 export const SIBI_LABELS_24: string[] = [
@@ -8,7 +8,7 @@ export const SIBI_LABELS_24: string[] = [
 	'T', 'U', 'V', 'W', 'X', 'Y'
 ];
 
-/** Legacy full alphabet (manual sim pad only — J/Z have no trained model). */
+/** Legacy full alphabet (manual sim pad only, since J/Z have no trained model). */
 export const SIBI_LABELS: string[] = Array.from({ length: 26 }, (_, i) =>
 	String.fromCharCode(65 + i)
 );

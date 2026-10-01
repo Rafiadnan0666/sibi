@@ -1,14 +1,14 @@
 // SIBI model engine: THREE real trained TF.js graph models.
 //
-//  1. sibi-joint (PRIMARY)      — MLP on wrist-relative/hand-size normalized
+//  1. sibi-joint (PRIMARY): MLP on wrist-relative and hand-size normalized
 //     21-joint vector. Retrained here: val acc 87.1% (24 classes A-I,K-Y).
-//  2. sibi-joint-baseline       — upstream AJustiago/SIBI-Recognition Conv1D
-//     on raw pixel joints (MIT). Val acc 74.2%. Kept as pembanding + vote.
-//  3. sibi-image                — MobileNetV2 transfer learning on SIBI hand
+//  2. sibi-joint-baseline: upstream AJustiago/SIBI-Recognition Conv1D
+//     on raw pixel joints (MIT). Val acc 74.2%. Kept for comparison and votes.
+//  3. sibi-image: MobileNetV2 transfer learning on SIBI hand
 //     photos (480 train / 240 val). Val acc 73.8%. ROI cross-check.
 //
 // J and Z are excluded everywhere: they are dynamic SIBI signs (motion),
-// not static handshapes — documented limitation, not a bug.
+// not static handshapes. That is a documented limit, not a bug.
 
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';

@@ -1,4 +1,4 @@
-# Model SIBI — 3 model TF.js nyata (bukan demo)
+# Model SIBI: 3 model TF.js nyata
 
 | Folder | Model | Val acc | Ukuran | Sumber |
 |---|---|---|---|---|
@@ -6,7 +6,7 @@
 | `sibi-joint-baseline/` | Conv1D upstream (vote-2) | 74,2% | ~4,2 MB | AJustiago/SIBI-Recognition (MIT) |
 | `sibi-image/` | MobileNetV2 ROI (cross-check) | 73,8% | ~2,7 MB | `python/train_image.py` |
 
-24 kelas: A–I, K–Y. J/Z dikecualikan — isyarat dinamis (gerak), bukan handshape statis.
+24 kelas: A-I, K-Y. J dan Z dikecualikan karena isyarat gerak, bukan handshape statis.
 
 ## Reproduksi penuh
 
@@ -36,7 +36,7 @@ node scripts/verify-norm.mjs        # normalisasi TS vs Python (aktual: 2.4e-7)
 
 Sampel sendi (272 latih / 124 uji) + foto (480/240) dari
 [AJustiago/SIBI-Recognition](https://github.com/AJustiago/SIBI-Recognition) (MIT),
-kamus SIBI resmi — setara alfabet Kaggle
+kamus SIBI resmi, setara alfabet Kaggle
 [`alvinbintang/sibi-dataset`](https://www.kaggle.com/datasets/alvinbintang/sibi-dataset)
 (Kaggle butuh token login; untuk data Kaggle persisnya pakai
 `python/train_sibi.py --data ./SIBI`).
