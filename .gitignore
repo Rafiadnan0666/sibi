@@ -22,3 +22,7 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local training artifacts (large, reproducible via python/)
+/training_output
+python/__pycache__/

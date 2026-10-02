@@ -48,15 +48,15 @@ async function check(url, samples, shape, nOut, tag) {
 
 await check(`${BASE}/sibi-joint/model.json`, vecs.joint, [1, 63], 24, 'joint');
 await check(`${BASE}/sibi-joint-baseline/model.json`, vecs.baseline, [1, 63, 1], 26, 'baseline');
-// image model: shape/run check (softmax sums to 1)
-{
-	const m = await tf.loadGraphModel(`${BASE}/sibi-image/model.json`);
+// image models: shape/run check (softmax sums to 1)
+for (const tag of ['sibi-advanced', 'sibi-image']) {
+	const m = await tf.loadGraphModel(`${BASE}/${tag}/model.json`);
 	const t = tf.randomNormal([1, 128, 128, 3]);
 	const r = await m.executeAsync(t);
 	const ten = Array.isArray(r) ? r[0] : r;
 	const p = Array.from(await ten.data());
 	const sum = p.reduce((a, b) => a + b, 0);
-	console.log(`image: outDim=${p.length} softmaxSum=${sum.toFixed(4)}`);
+	console.log(`${tag}: outDim=${p.length} softmaxSum=${sum.toFixed(4)}`);
 	if (p.length !== 24 || Math.abs(sum - 1) > 1e-3) fails++;
 	t.dispose();
 	if (Array.isArray(r)) r.forEach((x) => x.dispose());

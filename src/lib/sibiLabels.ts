@@ -22,7 +22,8 @@ export const MODEL_INPUT_SIZE = 128;
 export const MODEL_URLS = {
 	joint: '/models/sibi-joint/model.json',
 	jointBaseline: '/models/sibi-joint-baseline/model.json',
-	image: '/models/sibi-image/model.json'
+	image: '/models/sibi-advanced/model.json',
+	imageLegacy: '/models/sibi-image/model.json'
 } as const;
 
 /** @deprecated use MODEL_URLS */

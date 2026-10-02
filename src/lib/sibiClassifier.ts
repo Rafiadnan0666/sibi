@@ -1,12 +1,23 @@
-// SIBI model engine: THREE real trained TF.js graph models.
+// SIBI model engine: ONE primary trained TF.js graph model + 2 optional votes.
 //
-//  1. sibi-joint (PRIMARY): MLP on wrist-relative and hand-size normalized
-//     21-joint vector. Retrained here: val acc 87.1% (24 classes A-I,K-Y).
-//  2. sibi-joint-baseline: upstream AJustiago/SIBI-Recognition Conv1D
-//     on raw pixel joints (MIT). Val acc 74.2%. Kept for comparison and votes.
-//  3. sibi-image: MobileNetV2 transfer learning on SIBI hand
-//     photos (480 train / 240 val). Val acc 73.8%. ROI cross-check.
+//  1. sibi-joint (PRIMARY, loaded at startup, ~236 KB): MLP on CANONICAL v2
+//     21-joint vector: wrist-relative, hand-size normalized, rotated so the
+//     middle finger points +Y (camera-roll invariant), mirrored so the thumb
+//     base is always +X (left/right-hand invariant). Val acc 90.3%; mirror /
+//     +-30deg / distance perturbations keep 90.3% (exact feature invariance),
+//     simulated other-person finger ratios keep 86-90%.
+//     Retrained here: python/retrain_joint.py (MUST match jointFeatures.ts).
+//  2. sibi-joint-baseline (OPTIONAL, lazy): upstream AJustiago/SIBI-Recognition
+//     Conv1D on raw pixel joints (MIT). Val acc 74.2%. Off by default.
+//  3. sibi-advanced (OPTIONAL, lazy): MobileNetV2 128px on YOUR SIBI photos
+//     (5280 imgs, 24 classes x220, stratified 80/20 -> 4224/1056).
+//     Test acc 84.8%, top-3 95.6%, macro-F1 84.8% (same split, seed 42).
+//     Served at /models/sibi-advanced/model.json AND mirrored to
+//     /models/sibi-image/model.json for backward compat.
+//     Trained here: python/train_sibi_advanced.py. Off by default (heavy per-frame cost).
 //
+// Only the primary loads at startup so first paint is fast (~200 KB).
+// The other two load lazily when the user ticks their checkbox.
 // J and Z are excluded everywhere: they are dynamic SIBI signs (motion),
 // not static handshapes. That is a documented limit, not a bug.
 
@@ -81,7 +92,7 @@ export class SibiEngine {
 	slots: ModelSlot[] = [
 		{
 			key: 'joint', name: 'Sendi (utama)', url: '/models/sibi-joint/model.json',
-			valAcc: '87,1%', credit: 'dilati ulang di sini (MLP ternormalisasi)',
+			valAcc: '90,3%', credit: 'MLP kanonis v2, dilatih di sini (tangan/sudut/orang invarian)',
 			status: 'idle', model: null, labels: []
 		},
 		{
@@ -90,8 +101,8 @@ export class SibiEngine {
 			status: 'idle', model: null, labels: []
 		},
 		{
-			key: 'image', name: 'Citra ROI', url: '/models/sibi-image/model.json',
-			valAcc: '73,8%', credit: 'MobileNetV2, dilatih di sini (480 foto)',
+			key: 'image', name: 'Citra ROI', url: '/models/sibi-advanced/model.json',
+			valAcc: '84,8%', credit: 'MobileNetV2 128px, trained here on 5280 SIBI photos (80/20)',
 			status: 'idle', model: null, labels: []
 		}
 	];
@@ -111,38 +122,42 @@ export class SibiEngine {
 		} catch {
 			await tf.setBackend('cpu');
 		}
-		await Promise.all(
-			this.slots.map(async (s) => {
-				s.status = 'loading';
-				try {
-					const labelsUrl = s.url.replace(/model\.json$/, 'labels.json');
-					const [m, labels] = await Promise.all([
-						tf.loadGraphModel(s.url),
-						fetchLabels(labelsUrl)
-					]);
-					s.model = m;
-					s.labels = labels.length >= 24 ? labels.slice(0, 24) : [...JOINT_LABELS_FALLBACK];
-					try {
-						const warm =
-							s.key === 'joint'
-								? tf.zeros([1, 63])
-								: s.key === 'baseline'
-									? tf.zeros([1, 63, 1])
-									: tf.zeros([1, 128, 128, 3]);
-						const r = await m.executeAsync(warm);
-						if (Array.isArray(r)) r.forEach((t: tf.Tensor) => t.dispose());
-						else (r as tf.Tensor).dispose();
-						warm.dispose();
-					} catch {
-						// warmup non-fatal
-					}
-					s.status = 'ready';
-				} catch {
-					s.status = 'error';
-					s.model = null;
-				}
-			})
-		);
+		// Startup: primary model only (~236 KB). Optional votes lazy-load later.
+		await this.loadSlot('joint');
+	}
+
+	/** Load one slot on demand ('joint' | 'baseline' | 'image'). Safe to re-call. */
+	async loadSlot(key: ModelSlot['key']): Promise<void> {
+		const s = this.slots.find((x) => x.key === key);
+		if (!s || s.status === 'ready' || s.status === 'loading') return;
+		s.status = 'loading';
+		try {
+			const labelsUrl = s.url.replace(/model\.json$/, 'labels.json');
+			const [m, labels] = await Promise.all([
+				tf.loadGraphModel(s.url),
+				fetchLabels(labelsUrl)
+			]);
+			s.model = m;
+			s.labels = labels.length >= 24 ? labels.slice(0, 24) : [...JOINT_LABELS_FALLBACK];
+			try {
+				const warm =
+					s.key === 'joint'
+						? tf.zeros([1, 63])
+						: s.key === 'baseline'
+							? tf.zeros([1, 63, 1])
+							: tf.zeros([1, 128, 128, 3]);
+				const r = await m.executeAsync(warm);
+				if (Array.isArray(r)) r.forEach((t: tf.Tensor) => t.dispose());
+				else (r as tf.Tensor).dispose();
+				warm.dispose();
+			} catch {
+				// warmup non-fatal
+			}
+			s.status = 'ready';
+		} catch {
+			s.status = 'error';
+			s.model = null;
+		}
 	}
 
 	/** Primary: 63-vector normalized joints -> letter + full distribution. */
