@@ -99,7 +99,7 @@
 
 	// Settings. All three models are ON by default; unchecking only pauses
 	// that vote for the session (model stays cached for instant re-enable).
-	let minConf: number = $state(0.65);
+	let minConf: number = $state(0.55);
 	let cooldownMs: number = $state(1500);
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
@@ -110,7 +110,7 @@
 
 	// Guard against confusing alphabets: top1 must beat top2 by this margin,
 	// otherwise the frame is ignored (no commit, no smoother pollution).
-	const MARGIN_MIN = 0.1;
+	const MARGIN_MIN = 0.08;
 
 	let history: HistoryEntry[] = $state([]);
 	let notice: string = $state('');
@@ -438,7 +438,7 @@
 			}
 			// Require the gesture to be held before firing. Fist and peace need
 			// a 2 second hold so transitional shapes can't trigger actions.
-			const HOLD_MS = 2000;
+			const HOLD_MS = 1200;
 			const now = performance.now();
 			if (primary.gesture === 'fist') {
 				if (!fistHoldAt) fistHoldAt = now;
@@ -488,7 +488,7 @@
 		if (primary.gesture === 'palm') return;
 		// Reject tiny / poorly framed hands so they can't become garbage letters.
 		const area = (primary.box.w * primary.box.h) / (vw * vh);
-		if (area < 0.06 || area > 0.8) return;
+		if (area < 0.04 || area > 0.9) return;
 		// Motion gate: skip transitional frames (hand moving) to avoid
 		// committing a letter mid-gesture.
 		if (lastLm && lastLm.length === primary.landmarks.length) {
@@ -497,7 +497,7 @@
 				s += Math.hypot(primary.landmarks[i].x - lastLm[i].x, primary.landmarks[i].y - lastLm[i].y);
 			}
 			lastMotion = s / primary.landmarks.length;
-			if (lastMotion > 0.02) {
+			if (lastMotion > 0.03) {
 				lastLm = primary.landmarks;
 				return;
 			}
@@ -513,7 +513,7 @@
 			let lum = 0;
 			for (let i = 0; i < d.length; i += 4) lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
 			lum /= d.length / 4;
-			if (lum < 45 || lum > 215) {
+			if (lum < 35 || lum > 225) {
 				handHint = lum < 45 ? 'Terlalu gelap. Tambah cahaya.' : 'Terlalu terang / overexposed.';
 				return;
 			}
@@ -685,7 +685,7 @@
 		window.addEventListener('keydown', onKey);
 		(async () => {
 			history = await loadHistory();
-			minConf = await loadSetting('minConf', 0.65);
+			minConf = await loadSetting('minConf', 0.55);
 			cooldownMs = await loadSetting('cooldownMs', 1500);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
@@ -705,7 +705,7 @@
 				// code-splits it; module types still let TS track engine fully.
 				const mod = await import('$lib/sibiClassifier');
 				engine = new mod.SibiEngine();
-				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
+				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
 				// Show loading state immediately; engine mutates nested statuses.
 				for (const s of engine.slots) s.status = 'loading';
 				modelSlots = [...engine.slots];
@@ -743,7 +743,7 @@
 	});
 
 	async function restoreDefaults() {
-		minConf = 0.65;
+		minConf = 0.55;
 		cooldownMs = 1500;
 		grayscale = false;
 		normMode = 'neg-one-one';
@@ -754,14 +754,14 @@
 		await saveSetting('grayscale', grayscale);
 		await saveSetting('useBaseline', true);
 		await saveSetting('useImage', true);
-		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
+		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
 		lastLm = null;
 		flash('Pengaturan dipulihkan ke default');
 	}
 
 	async function onConfChange() {
 		const mod = await import('$lib/sibiClassifier');
-		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
+		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
 		await saveSetting('minConf', minConf);
 		await saveSetting('cooldownMs', cooldownMs);
 		await saveSetting('grayscale', grayscale);

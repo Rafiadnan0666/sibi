@@ -317,7 +317,7 @@ export class PredictionSmoother {
 		const windowSize = this.opts.windowSize ?? 15;
 		const minConf = this.opts.minConfidence ?? 0.6;
 		const cooldown = this.opts.cooldownMs ?? 1200;
-		const holdMs = this.opts.holdMs ?? 2000;
+		const holdMs = this.opts.holdMs ?? 1200;
 		this.window.push({ label, conf, t: now });
 		if (this.window.length > windowSize) this.window.shift();
 
