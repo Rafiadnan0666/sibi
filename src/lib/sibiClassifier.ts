@@ -298,6 +298,8 @@ export class PredictionSmoother {
 	private lastCommitAt = 0;
 	private currentLabel = '';
 	private labelStartAt = 0;
+	private pendingLabel = '';
+	private pendingCount = 0;
 	lastEmitted: { label: string; conf: number } | null = null;
 	progress = 0;
 
@@ -310,6 +312,8 @@ export class PredictionSmoother {
 		this.lastCommitAt = 0;
 		this.currentLabel = '';
 		this.labelStartAt = 0;
+		this.pendingLabel = '';
+		this.pendingCount = 0;
 	}
 
 	/** Feed one raw frame prediction. Returns a committed char or null. */
@@ -339,31 +343,46 @@ export class PredictionSmoother {
 			}
 		}
 
-		// Track how long the current majority label has been held.
-		if (topLabel && topLabel !== this.currentLabel) {
-			this.currentLabel = topLabel;
-			this.labelStartAt = now;
+		// Track how long the current majority label has been held, with a
+		// small hysteresis so single-frame flickers don't reset the timer.
+		if (topLabel) {
+			if (topLabel === this.currentLabel) {
+				this.pendingLabel = '';
+				this.pendingCount = 0;
+			} else {
+				if (topLabel === this.pendingLabel) this.pendingCount++;
+				else {
+					this.pendingLabel = topLabel;
+					this.pendingCount = 1;
+				}
+				if (this.pendingCount >= 2) {
+					this.currentLabel = topLabel;
+					this.labelStartAt = now;
+					this.pendingLabel = '';
+					this.pendingCount = 0;
+				}
+			}
 		}
 		const heldMs = this.currentLabel ? now - this.labelStartAt : 0;
 		this.progress = Math.min(1, heldMs / holdMs);
 
 		// Need the same label held for holdMs, enough confidence, and cooldown.
 		const tail = this.window.slice(-3);
-		const tailOk = tail.length >= 2 && tail.every((w) => w.label === topLabel);
+		const tailOk = tail.length >= 2 && tail.every((w) => w.label === this.currentLabel || w.label === topLabel);
 		if (
-			topLabel &&
+			this.currentLabel &&
 			topAvg >= minConf &&
 			heldMs >= holdMs &&
 			tailOk &&
 			now - this.lastCommitAt >= cooldown
 		) {
 			this.lastCommitAt = now;
-			this.lastEmitted = { label: topLabel, conf: topAvg };
+			this.lastEmitted = { label: this.currentLabel, conf: topAvg };
 			this.window = [];
 			this.progress = 0;
 			this.currentLabel = '';
 			this.labelStartAt = 0;
-			return topLabel;
+			return this.currentLabel;
 		}
 		return null;
 	}
