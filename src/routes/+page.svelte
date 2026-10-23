@@ -850,6 +850,21 @@
 							<p class="text-[11px] font-bold">Kamera mungkin dipakai aplikasi lain atau salah perangkat.</p>
 						</div>
 					{/if}
+					<div class="absolute bottom-12 left-2 right-2 z-10 flex flex-wrap gap-1.5">
+						{#if words.length}
+							{#each words as w, i}
+								<span class="sticker flex items-center gap-1 rounded-lg bg-white/95 px-2 py-1 text-xs font-black uppercase {dragFrom === i ? 'opacity-50' : ''}">
+									<button onclick={() => moveWord(i, -1)} disabled={i === 0} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kiri">L</button>
+									<span>{w}</span>
+									<button onclick={() => removeWord(i)} class="rounded px-1 text-xs font-black opacity-60 hover:opacity-100" title="Hapus">x</button>
+									<button onclick={() => moveWord(i, 1)} disabled={i === words.length - 1} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kanan">R</button>
+								</span>
+							{/each}
+						{/if}
+						{#if prefix}
+							<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
+						{/if}
+					</div>
 					<div class="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
 						<span class="sticker rounded-md bg-white px-2 py-0.5">FPS {fps}</span>
 						<span class="sticker rounded-md bg-white px-2 py-0.5">sendi {inferMs} ms</span>
