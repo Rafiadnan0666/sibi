@@ -91,6 +91,8 @@
 	let holdLabel = $state('');
 	let holdProgressUI = $state(0);
 	let lastHoldUiAt = 0;
+	let lockedLetter = $state('');
+	let lockedTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastLm: DecodedHand['landmarks'] | null = $state(null);
 	let lastMotion = 0;
 	let fps: number = $state(0);
@@ -425,8 +427,10 @@
 		}
 
 		if (overlayEl) {
-			overlayEl.width = vw;
-			overlayEl.height = vh;
+			if (overlayEl.width !== vw || overlayEl.height !== vh) {
+				overlayEl.width = vw;
+				overlayEl.height = vh;
+			}
 			const ctx = overlayEl.getContext('2d')!;
 			ctx.clearRect(0, 0, vw, vh);
 			drawHandOverlay(ctx, found, vw, vh);
@@ -511,18 +515,6 @@
 		lastLm = primary.landmarks;
 		// UI gestures take priority so they never pollute the letter stream.
 		if (primary.gesture === 'fist' || primary.gesture === 'peace') return;
-		// Lighting gate (only at inference cadence).
-		try {
-			const c = document.createElement('canvas');
-			c.width = 24; c.height = 24;
-			const ctx = c.getContext('2d', { willReadFrequently: true })!;
-			ctx.drawImage(videoEl, primary.box.x, primary.box.y, primary.box.w, primary.box.h, 0, 0, 24, 24);
-			const d = ctx.getImageData(0, 0, 24, 24).data;
-			let lum = 0;
-			for (let i = 0; i < d.length; i += 4) lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-			lum /= d.length / 4;
-			if (lum < 35 || lum > 225) return;
-		} catch { /* ignore */ }
 		if (t - lastJointAt >= 110 && engine.slots[0].status === 'ready') {
 			lastJointAt = t;
 			try {
@@ -561,6 +553,9 @@
 							commitChar(committed);
 							recentChars = [...recentChars, committed].slice(-10);
 							flash(`Terkunci: ${committed}`);
+							lockedLetter = committed;
+							if (lockedTimer) clearTimeout(lockedTimer);
+							lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
 						}
 						stability = smoother.progress;
 					}
@@ -848,13 +843,6 @@
 					<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">stabil {Math.round(stability * 100)}%</p>
 				</div>
 			{/if}
-			{#if !handsFound && !noSignal}
-				<div class="pointer-events-none absolute inset-0 grid place-items-center">
-					<div class="grid h-[62%] w-[40%] place-items-center rounded-2xl border-4 border-dashed border-[#FFD02B]/70">
-						<span class="rounded-md bg-black/70 px-2 py-0.5 text-[11px] font-bold text-[#FFD02B]">tangan di sini</span>
-					</div>
-				</div>
-			{/if}
 			{#if handHint && !noSignal}
 				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-4 py-1.5 text-center text-xs font-black uppercase">
 					{handHint}
@@ -892,6 +880,14 @@
 					<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
 				{/if}
 			</div>
+			{#if lockedLetter}
+				<div class="pointer-events-none absolute inset-0 grid place-items-center z-20">
+					<div class="rounded-2xl border-4 border-black bg-green-300 px-8 py-4 text-center shadow-[8px_8px_0_#000]">
+						<p class="font-display text-8xl leading-none">{lockedLetter}</p>
+						<p class="mt-1 text-xs font-black uppercase">Terkunci</p>
+					</div>
+				</div>
+			{/if}
 			<div class="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
 				<span class="sticker rounded-md bg-white px-2 py-0.5">FPS {fps}</span>
 				<span class="sticker rounded-md bg-white px-2 py-0.5">sendi {inferMs} ms</span>
