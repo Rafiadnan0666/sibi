@@ -87,8 +87,10 @@
 	let gestureHold = 0;
 	let fistHoldAt = 0;
 	let peaceHoldAt = 0;
-	let holdProgress = $state(0);
+	let holdProgress = 0;
 	let holdLabel = $state('');
+	let holdProgressUI = $state(0);
+	let lastHoldUiAt = 0;
 	let lastLm: DecodedHand['landmarks'] | null = $state(null);
 	let lastMotion = 0;
 	let fps: number = $state(0);
@@ -104,7 +106,7 @@
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
 	let useBaseline: boolean = $state(true);
-	let useImage: boolean = $state(true);
+	let useImage: boolean = $state(false);
 	let autoCorrect: boolean = $state(true);
 	let dragFrom = $state(-1);
 
@@ -479,6 +481,10 @@
 			holdLabel = '';
 		}
 
+		if (performance.now() - lastHoldUiAt > 80) {
+			holdProgressUI = holdProgress;
+			lastHoldUiAt = performance.now();
+		}
 		void classifyFrame(primary, t, vw, vh);
 	}
 
@@ -503,7 +509,9 @@
 			}
 		}
 		lastLm = primary.landmarks;
-		// Lighting gate: very dark/bright frames give unstable detection.
+		// UI gestures take priority so they never pollute the letter stream.
+		if (primary.gesture === 'fist' || primary.gesture === 'peace') return;
+		// Lighting gate (only at inference cadence).
 		try {
 			const c = document.createElement('canvas');
 			c.width = 24; c.height = 24;
@@ -513,15 +521,8 @@
 			let lum = 0;
 			for (let i = 0; i < d.length; i += 4) lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
 			lum /= d.length / 4;
-			if (lum < 35 || lum > 225) {
-				handHint = lum < 45 ? 'Terlalu gelap. Tambah cahaya.' : 'Terlalu terang / overexposed.';
-				return;
-			}
-		} catch {
-			// ignore brightness check failures
-		}
-		// UI gestures take priority so they never pollute the letter stream.
-		if (primary.gesture === 'fist' || primary.gesture === 'peace') return;
+			if (lum < 35 || lum > 225) return;
+		} catch { /* ignore */ }
 		if (t - lastJointAt >= 110 && engine.slots[0].status === 'ready') {
 			lastJointAt = t;
 			try {
@@ -640,10 +641,10 @@
 	/** Turn every model on and (re)load any that failed. */
 	async function enableAllModels() {
 		useBaseline = true;
-		useImage = true;
+		useImage = false;
 		autoCorrect = true;
 		await saveSetting('useBaseline', true);
-		await saveSetting('useImage', true);
+		await saveSetting('useImage', false);
 		await saveSetting('autoCorrect', true);
 		if (!engine) return;
 		for (const s of engine.slots) {
@@ -689,7 +690,7 @@
 			cooldownMs = await loadSetting('cooldownMs', 1500);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
-			useImage = await loadSetting('useImage', true);
+			useImage = await loadSetting('useImage', false);
 			autoCorrect = await loadSetting('autoCorrect', true);
 			void refreshDevices();
 			try {
@@ -753,7 +754,7 @@
 		await saveSetting('cooldownMs', cooldownMs);
 		await saveSetting('grayscale', grayscale);
 		await saveSetting('useBaseline', true);
-		await saveSetting('useImage', true);
+		await saveSetting('useImage', false);
 		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
 		lastLm = null;
 		flash('Pengaturan dipulihkan ke default');
@@ -864,9 +865,9 @@
 					<div class="flex items-center gap-2 text-xs font-black uppercase">
 						<span>{holdLabel === 'fist' ? 'Hapus' : 'Kunci kata'}</span>
 						<div class="h-2 flex-1 overflow-hidden rounded-full border-2 border-black bg-[#FFF6D6]">
-							<div class="h-full bg-[#FF90E8]" style="width:{Math.round(holdProgress * 100)}%"></div>
+							<div class="h-full bg-[#FF90E8]" style="width:{Math.round(holdProgressUI * 100)}%"></div>
 						</div>
-						<span>{Math.round(holdProgress * 100)}%</span>
+						<span>{Math.round(holdProgressUI * 100)}%</span>
 					</div>
 				</div>
 			{/if}
