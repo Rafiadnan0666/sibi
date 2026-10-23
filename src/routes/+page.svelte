@@ -98,9 +98,6 @@
 	let lastMotion = 0;
 	let fps: number = $state(0);
 	let handsFound: boolean = $state(false);
-	let cameraZone: 'left' | 'middle' | 'right' = $state('middle');
-	let zoneSince = 0;
-	let zoneActionDone = false;
 	let handHint: string = $state('');
 	let lastHintAt = 0;
 	let debugOpen: boolean = $state(false);
@@ -426,42 +423,7 @@
 			lastUiStateAt = t;
 		}
 		const primary = found[0];
-		// The preview is mirrored, so invert the tracked x coordinate to match
-		// the colored zones the user sees on screen.
-		if (primary) {
-			const visualX = 1 - (primary.box.x + primary.box.w / 2) / vw;
-			const nextZone = visualX < 1 / 3 ? 'left' : visualX > 2 / 3 ? 'right' : 'middle';
-			if (nextZone !== cameraZone) {
-				cameraZone = nextZone;
-				zoneSince = t;
-				zoneActionDone = false;
-			}
-			if (nextZone === 'middle') {
-				zoneSince = 0;
-				zoneActionDone = false;
-			} else {
-				if (!zoneSince) zoneSince = t;
-				if (!zoneActionDone && t - zoneSince >= 2000) {
-					if (nextZone === 'right' && /^[A-Z]$/.test(jointLabel)) {
-						commitChar(jointLabel);
-						recentChars = [...recentChars, jointLabel].slice(-10);
-						flash(`Terkunci: ${jointLabel}`);
-						lockedLetter = jointLabel;
-						if (lockedTimer) clearTimeout(lockedTimer);
-						lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
-					} else if (nextZone === 'left') {
-						deleteLast();
-						flash('Huruf terakhir dihapus');
-					}
-					zoneActionDone = true;
-				}
-			}
-		} else {
-			cameraZone = 'middle';
-			zoneSince = 0;
-			zoneActionDone = false;
-		}
-
+		// UI state throttled above; gesture handling uses primary every frame.
 		// Framing hints so the user can position their hand where tracking works.
 		if (t - lastHintAt > 500) {
 			lastHintAt = t;
@@ -596,7 +558,7 @@
 					// Confusing-alphabet guard: 50/50 frames never commit.
 					if (fused >= 0.4 && margin >= MARGIN_MIN) {
 						lowConfFrames = 0;
-						const committed = cameraZone === 'middle' ? smoother.push(out.label, fused, t) : null;
+						const committed = smoother.push(out.label, fused, t);
 						stability = smoother.progress;
 						if (committed) {
 							commitChar(committed);
