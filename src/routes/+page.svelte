@@ -93,6 +93,7 @@
 	let lastHoldUiAt = 0;
 	let lockedLetter = $state('');
 	let lockedTimer: ReturnType<typeof setTimeout> | null = null;
+	let lowConfFrames = 0;
 	let lastLm: DecodedHand['landmarks'] | null = $state(null);
 	let lastMotion = 0;
 	let fps: number = $state(0);
@@ -103,7 +104,7 @@
 
 	// Settings. All three models are ON by default; unchecking only pauses
 	// that vote for the session (model stays cached for instant re-enable).
-	let minConf: number = $state(0.55);
+	let minConf: number = $state(0.5);
 	let cooldownMs: number = $state(1500);
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
@@ -114,7 +115,7 @@
 
 	// Guard against confusing alphabets: top1 must beat top2 by this margin,
 	// otherwise the frame is ignored (no commit, no smoother pollution).
-	const MARGIN_MIN = 0.08;
+	const MARGIN_MIN = 0.06;
 
 	let history: HistoryEntry[] = $state([]);
 	let notice: string = $state('');
@@ -547,8 +548,10 @@
 					const margin =
 						out.top3.length > 1 ? out.top3[0].confidence - out.top3[1].confidence : 1;
 					// Confusing-alphabet guard: 50/50 frames never commit.
-					if (fused >= minConf && margin >= MARGIN_MIN) {
+					if (fused >= 0.4 && margin >= MARGIN_MIN) {
+						lowConfFrames = 0;
 						const committed = smoother.push(out.label, fused, t);
+						stability = smoother.progress;
 						if (committed) {
 							commitChar(committed);
 							recentChars = [...recentChars, committed].slice(-10);
@@ -557,7 +560,13 @@
 							if (lockedTimer) clearTimeout(lockedTimer);
 							lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
 						}
-						stability = smoother.progress;
+					} else {
+						lowConfFrames++;
+						if (lowConfFrames >= 3) {
+							smoother.reset();
+							lowConfFrames = 0;
+						}
+						stability = 0;
 					}
 				}
 			} catch {
@@ -681,7 +690,7 @@
 		window.addEventListener('keydown', onKey);
 		(async () => {
 			history = await loadHistory();
-			minConf = await loadSetting('minConf', 0.55);
+			minConf = await loadSetting('minConf', 0.5);
 			cooldownMs = await loadSetting('cooldownMs', 1500);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
@@ -739,7 +748,7 @@
 	});
 
 	async function restoreDefaults() {
-		minConf = 0.55;
+		minConf = 0.5;
 		cooldownMs = 1500;
 		grayscale = false;
 		normMode = 'neg-one-one';
