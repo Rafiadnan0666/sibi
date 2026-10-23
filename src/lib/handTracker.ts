@@ -247,7 +247,7 @@ export function detectHands(video: HTMLVideoElement, nowMs: number): DetectOutpu
 	if (hands.length === 0) {
 		prevLm = null;
 	} else if (prevLm && prevLm.length === hands[0].landmarks.length) {
-		const a = 0.45;
+		const a = 0.6;
 		const smoothed = hands[0].landmarks.map((p, i) => ({
 			x: prevLm![i].x * (1 - a) + p.x * a,
 			y: prevLm![i].y * (1 - a) + p.y * a,
