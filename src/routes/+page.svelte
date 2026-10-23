@@ -85,6 +85,10 @@
 	let gesture: ControlGesture = $state('none');
 	let lastGesture: ControlGesture = $state('none');
 	let gestureHold = 0;
+	let fistHoldAt = 0;
+	let peaceHoldAt = 0;
+	let holdProgress = $state(0);
+	let holdLabel = $state('');
 	let lastLm: DecodedHand['landmarks'] | null = $state(null);
 	let lastMotion = 0;
 	let fps: number = $state(0);
@@ -95,7 +99,7 @@
 
 	// Settings. All three models are ON by default; unchecking only pauses
 	// that vote for the session (model stays cached for instant re-enable).
-	let minConf: number = $state(0.8);
+	let minConf: number = $state(0.65);
 	let cooldownMs: number = $state(1500);
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
@@ -106,7 +110,7 @@
 
 	// Guard against confusing alphabets: top1 must beat top2 by this margin,
 	// otherwise the frame is ignored (no commit, no smoother pollution).
-	const MARGIN_MIN = 0.2;
+	const MARGIN_MIN = 0.1;
 
 	let history: HistoryEntry[] = $state([]);
 	let notice: string = $state('');
@@ -432,16 +436,47 @@
 				lastGesture = primary.gesture;
 				gestureHold = 1;
 			}
-			// Require the gesture to be held for a few frames before firing,
-			// so transitional hand shapes can't trigger delete/space/speak.
-			if (gestureHold >= 8) {
-				if (primary.gesture === 'fist' && gestureCooldown('fist', 1800)) deleteLast();
-				else if (primary.gesture === 'peace' && gestureCooldown('peace', 1800)) commitSpace();
-				else if (primary.gesture === 'thumbsup' && gestureCooldown('thumbsup', 2500)) speak();
+			// Require the gesture to be held before firing. Fist and peace need
+			// a 2 second hold so transitional shapes can't trigger actions.
+			const HOLD_MS = 2000;
+			const now = performance.now();
+			if (primary.gesture === 'fist') {
+				if (!fistHoldAt) fistHoldAt = now;
+				const held = now - fistHoldAt;
+				holdProgress = Math.min(1, held / HOLD_MS);
+				holdLabel = 'fist';
+				if (held >= HOLD_MS && gestureCooldown('fist', 2200)) {
+					deleteLast();
+					fistHoldAt = 0;
+					holdProgress = 0;
+					holdLabel = '';
+				}
+			} else if (primary.gesture === 'peace') {
+				if (!peaceHoldAt) peaceHoldAt = now;
+				const held = now - peaceHoldAt;
+				holdProgress = Math.min(1, held / HOLD_MS);
+				holdLabel = 'peace';
+				if (held >= HOLD_MS && gestureCooldown('peace', 2200)) {
+					commitSpace();
+					peaceHoldAt = 0;
+					holdProgress = 0;
+					holdLabel = '';
+				}
+			} else if (primary.gesture === 'thumbsup') {
+				if (gestureCooldown('thumbsup', 2500)) speak();
+				holdProgress = 0;
+				holdLabel = '';
+			} else {
+				fistHoldAt = 0;
+				peaceHoldAt = 0;
+				holdProgress = 0;
+				holdLabel = '';
 			}
 		} else {
-			lastGesture = 'none';
-			gestureHold = 0;
+			fistHoldAt = 0;
+			peaceHoldAt = 0;
+			holdProgress = 0;
+			holdLabel = '';
 		}
 
 		void classifyFrame(primary, t, vw, vh);
@@ -650,7 +685,7 @@
 		window.addEventListener('keydown', onKey);
 		(async () => {
 			history = await loadHistory();
-			minConf = await loadSetting('minConf', 0.8);
+			minConf = await loadSetting('minConf', 0.65);
 			cooldownMs = await loadSetting('cooldownMs', 1500);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
@@ -670,7 +705,7 @@
 				// code-splits it; module types still let TS track engine fully.
 				const mod = await import('$lib/sibiClassifier');
 				engine = new mod.SibiEngine();
-				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs });
+				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
 				// Show loading state immediately; engine mutates nested statuses.
 				for (const s of engine.slots) s.status = 'loading';
 				modelSlots = [...engine.slots];
@@ -708,7 +743,7 @@
 	});
 
 	async function restoreDefaults() {
-		minConf = 0.8;
+		minConf = 0.65;
 		cooldownMs = 1500;
 		grayscale = false;
 		normMode = 'neg-one-one';
@@ -719,14 +754,14 @@
 		await saveSetting('grayscale', grayscale);
 		await saveSetting('useBaseline', true);
 		await saveSetting('useImage', true);
-		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs });
+		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
 		lastLm = null;
 		flash('Pengaturan dipulihkan ke default');
 	}
 
 	async function onConfChange() {
 		const mod = await import('$lib/sibiClassifier');
-		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs });
+		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 2000 });
 		await saveSetting('minConf', minConf);
 		await saveSetting('cooldownMs', cooldownMs);
 		await saveSetting('grayscale', grayscale);
@@ -822,6 +857,17 @@
 			{#if handHint && !noSignal}
 				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-4 py-1.5 text-center text-xs font-black uppercase">
 					{handHint}
+				</div>
+			{/if}
+			{#if holdLabel}
+				<div class="absolute inset-x-0 top-0 z-20 border-b-4 border-black bg-white px-4 py-1.5">
+					<div class="flex items-center gap-2 text-xs font-black uppercase">
+						<span>{holdLabel === 'fist' ? 'Hapus' : 'Kunci kata'}</span>
+						<div class="h-2 flex-1 overflow-hidden rounded-full border-2 border-black bg-[#FFF6D6]">
+							<div class="h-full bg-[#FF90E8]" style="width:{Math.round(holdProgress * 100)}%"></div>
+						</div>
+						<span>{Math.round(holdProgress * 100)}%</span>
+					</div>
 				</div>
 			{/if}
 			{#if noSignal}

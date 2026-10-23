@@ -290,13 +290,16 @@ export interface SmootherOptions {
 	minFrames?: number;
 	minConfidence?: number;
 	cooldownMs?: number;
+	holdMs?: number;
 }
 
 export class PredictionSmoother {
 	private window: { label: string; conf: number; t: number }[] = [];
 	private lastCommitAt = 0;
+	private currentLabel = '';
+	private labelStartAt = 0;
 	lastEmitted: { label: string; conf: number } | null = null;
-	progress = 0; // 0..1 stability progress for the current majority label
+	progress = 0;
 
 	constructor(private opts: SmootherOptions = {}) {}
 
@@ -305,14 +308,16 @@ export class PredictionSmoother {
 		this.progress = 0;
 		this.lastEmitted = null;
 		this.lastCommitAt = 0;
+		this.currentLabel = '';
+		this.labelStartAt = 0;
 	}
 
 	/** Feed one raw frame prediction. Returns a committed char or null. */
 	push(label: string, conf: number, now = performance.now()): string | null {
 		const windowSize = this.opts.windowSize ?? 15;
-		const minFrames = this.opts.minFrames ?? 9;
 		const minConf = this.opts.minConfidence ?? 0.6;
 		const cooldown = this.opts.cooldownMs ?? 1200;
+		const holdMs = this.opts.holdMs ?? 2000;
 		this.window.push({ label, conf, t: now });
 		if (this.window.length > windowSize) this.window.shift();
 
@@ -333,17 +338,32 @@ export class PredictionSmoother {
 				topAvg = v.sum / v.n;
 			}
 		}
-		this.progress = Math.min(1, topN / minFrames);
 
-		if (topN >= minFrames && topAvg >= minConf && now - this.lastCommitAt >= cooldown) {
-			const tail = this.window.slice(-5);
-			if (tail.length >= 5 && tail.every((w) => w.label === topLabel)) {
-				this.lastCommitAt = now;
-				this.lastEmitted = { label: topLabel, conf: topAvg };
-				this.window = [];
-				this.progress = 0;
-				return topLabel;
-			}
+		// Track how long the current majority label has been held.
+		if (topLabel && topLabel !== this.currentLabel) {
+			this.currentLabel = topLabel;
+			this.labelStartAt = now;
+		}
+		const heldMs = this.currentLabel ? now - this.labelStartAt : 0;
+		this.progress = Math.min(1, heldMs / holdMs);
+
+		// Need the same label held for holdMs, enough confidence, and cooldown.
+		const tail = this.window.slice(-3);
+		const tailOk = tail.length >= 2 && tail.every((w) => w.label === topLabel);
+		if (
+			topLabel &&
+			topAvg >= minConf &&
+			heldMs >= holdMs &&
+			tailOk &&
+			now - this.lastCommitAt >= cooldown
+		) {
+			this.lastCommitAt = now;
+			this.lastEmitted = { label: topLabel, conf: topAvg };
+			this.window = [];
+			this.progress = 0;
+			this.currentLabel = '';
+			this.labelStartAt = 0;
+			return topLabel;
 		}
 		return null;
 	}
