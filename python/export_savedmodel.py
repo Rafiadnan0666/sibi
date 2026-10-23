@@ -12,6 +12,9 @@ ours = tf.keras.models.load_model(os.path.join(WORK, "joint_model", "sibi_joint_
 ours.export(os.path.join(WORK, "joint_sm"))
 print("ours exported:", ours.input_shape, "->", ours.output_shape)
 
-base = tf.keras.models.load_model(os.path.join(WORK, "upstream_model.h5"), compile=False)
-base.export(os.path.join(WORK, "baseline_sm"))
-print("baseline exported:", base.input_shape, "->", base.output_shape)
+try:
+    base = tf.keras.models.load_model(os.path.join(WORK, "upstream_model.h5"), compile=False)
+    base.export(os.path.join(WORK, "baseline_sm"))
+    print("baseline exported:", base.input_shape, "->", base.output_shape)
+except Exception as e:
+    print("baseline skipped (optional, needs upstream_model.h5):", e)

@@ -7,6 +7,7 @@ export interface PreprocessOptions {
 	size?: number;
 	normalize?: 'zero-one' | 'neg-one-one';
 	grayscale?: boolean;
+	mirror?: boolean;
 }
 
 /** Square-crop a pixel-space box from a video frame, with padding + clamping. */
@@ -16,7 +17,7 @@ export function cropROI(
 ): HTMLCanvasElement {
 	const vw = source.videoWidth || 640;
 	const vh = source.videoHeight || 480;
-	const side = Math.max(24, Math.max(box.w, box.h) * 1.35);
+	const side = Math.max(24, Math.max(box.w, box.h) * 1.5);
 	const cx = box.x + box.w / 2;
 	const cy = box.y + box.h / 2;
 	let sx = Math.round(cx - side / 2);
@@ -42,6 +43,10 @@ export function preprocessToTensor(
 	off.width = size;
 	off.height = size;
 	const ctx = off.getContext('2d', { willReadFrequently: true })!;
+	if (opts.mirror) {
+		ctx.translate(size, 0);
+		ctx.scale(-1, 1);
+	}
 	ctx.drawImage(canvas, 0, 0, size, size);
 	const img = ctx.getImageData(0, 0, size, size);
 	const data = new Float32Array(size * size * 3);

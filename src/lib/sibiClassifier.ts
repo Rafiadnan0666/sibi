@@ -1,4 +1,4 @@
-// SIBI model engine: ONE primary trained TF.js graph model + 2 optional votes.
+// SIBI model engine: ONE primary trained TF.js graph model + 2 votes (ALL ON).
 //
 //  1. sibi-joint (PRIMARY, loaded at startup, ~236 KB): MLP on CANONICAL v2
 //     21-joint vector: wrist-relative, hand-size normalized, rotated so the
@@ -7,22 +7,23 @@
 //     +-30deg / distance perturbations keep 90.3% (exact feature invariance),
 //     simulated other-person finger ratios keep 86-90%.
 //     Retrained here: python/retrain_joint.py (MUST match jointFeatures.ts).
-//  2. sibi-joint-baseline (OPTIONAL, lazy): upstream AJustiago/SIBI-Recognition
-//     Conv1D on raw pixel joints (MIT). Val acc 74.2%. Off by default.
-//  3. sibi-advanced (OPTIONAL, lazy): MobileNetV2 128px on YOUR SIBI photos
+//  2. sibi-joint-baseline (VOTE, loaded at startup): upstream AJustiago/SIBI-Recognition
+//     Conv1D on raw pixel joints (MIT). Val acc 74.2%. On by default.
+//  3. sibi-advanced (VOTE, loaded at startup): MobileNetV2 128px on YOUR SIBI photos
 //     (5280 imgs, 24 classes x220, stratified 80/20 -> 4224/1056).
 //     Test acc 84.8%, top-3 95.6%, macro-F1 84.8% (same split, seed 42).
 //     Served at /models/sibi-advanced/model.json AND mirrored to
 //     /models/sibi-image/model.json for backward compat.
-//     Trained here: python/train_sibi_advanced.py. Off by default (heavy per-frame cost).
+//     Trained here: python/train_sibi_advanced.py. On by default.
 //
-// Only the primary loads at startup so first paint is fast (~200 KB).
-// The other two load lazily when the user ticks their checkbox.
+// All three load at startup so every vote is live. Warmup failures mark the
+// slot as error (never fake-ready). Use loadPrimaryOnly() for fast-first-paint.
 // J and Z are excluded everywhere: they are dynamic SIBI signs (motion),
 // not static handshapes. That is a documented limit, not a bug.
 
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-webgl';
+import type { GraphModel } from '@tensorflow/tfjs';
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'demo' | 'error';
 
@@ -33,9 +34,10 @@ export interface ModelSlot {
 	valAcc: string;
 	credit: string;
 	status: ModelStatus;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	model: any | null;
+	model: GraphModel | null;
 	labels: string[];
+	/** Human-readable failure reason when status === 'error'. Shown in the UI. */
+	lastError?: string;
 }
 
 export interface ScoredLetter {
@@ -67,9 +69,9 @@ async function fetchLabels(url: string): Promise<string[]> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function runGraph(model: any, input: tf.Tensor): Promise<Float32Array | null> {
+async function runGraph(model: GraphModel, input: tf.Tensor): Promise<Float32Array | null> {
 	try {
-		const r = await model.executeAsync(input);
+		const r = (await model.executeAsync(input)) as tf.Tensor | tf.Tensor[];
 		const ten = (Array.isArray(r) ? r[0] : r) as tf.Tensor;
 		const data = (await ten.data()) as Float32Array;
 		if (Array.isArray(r)) r.forEach((t: tf.Tensor) => t.dispose());
@@ -89,6 +91,7 @@ function top(probs: ArrayLike<number>, labels: string[], k = 3): ScoredLetter[] 
 }
 
 export class SibiEngine {
+	private inflight = new Map<ModelSlot['key'], Promise<void>>();
 	slots: ModelSlot[] = [
 		{
 			key: 'joint', name: 'Sendi (utama)', url: '/models/sibi-joint/model.json',
@@ -122,15 +125,47 @@ export class SibiEngine {
 		} catch {
 			await tf.setBackend('cpu');
 		}
-		// Startup: primary model only (~236 KB). Optional votes lazy-load later.
+		await tf.ready();
+		// Startup: ALL models load in parallel so every vote is live.
+		// Joint (~236 KB) resolves first; baseline (~4 MB) and image (~12 MB)
+		// follow. Each slot reports its own status/error independently.
+		await Promise.all([
+			this.loadSlot('joint'),
+			this.loadSlot('baseline'),
+			this.loadSlot('image')
+		]);
+	}
+
+	/** Load only the primary model (fast first paint, ~200 KB). */
+	async loadPrimaryOnly(): Promise<void> {
+		await tf.ready();
+		try {
+			await tf.setBackend('webgl');
+		} catch {
+			await tf.setBackend('cpu');
+		}
+		await tf.ready();
 		await this.loadSlot('joint');
 	}
 
 	/** Load one slot on demand ('joint' | 'baseline' | 'image'). Safe to re-call. */
 	async loadSlot(key: ModelSlot['key']): Promise<void> {
 		const s = this.slots.find((x) => x.key === key);
-		if (!s || s.status === 'ready' || s.status === 'loading') return;
+		if (!s || s.status === 'ready') return;
+		const running = this.inflight.get(key);
+		if (running) return running;
+		const p = this.doLoadSlot(s);
+		this.inflight.set(key, p);
+		try {
+			await p;
+		} finally {
+			this.inflight.delete(key);
+		}
+	}
+
+	private async doLoadSlot(s: ModelSlot): Promise<void> {
 		s.status = 'loading';
+		s.lastError = undefined;
 		try {
 			const labelsUrl = s.url.replace(/model\.json$/, 'labels.json');
 			const [m, labels] = await Promise.all([
@@ -146,24 +181,48 @@ export class SibiEngine {
 						: s.key === 'baseline'
 							? tf.zeros([1, 63, 1])
 							: tf.zeros([1, 128, 128, 3]);
-				const r = await m.executeAsync(warm);
+				const r = (await m.executeAsync(warm)) as tf.Tensor | tf.Tensor[];
 				if (Array.isArray(r)) r.forEach((t: tf.Tensor) => t.dispose());
 				else (r as tf.Tensor).dispose();
 				warm.dispose();
-			} catch {
-				// warmup non-fatal
+			} catch (warmErr) {
+				// Warmup failure means inference will fail too: do NOT report
+				// ready. Surface the error so the UI shows Gagal, not Siap.
+				const msg = warmErr instanceof Error ? warmErr.message : String(warmErr);
+				try {
+					m.dispose();
+				} catch {
+					// ignore dispose errors
+				}
+				s.model = null;
+				s.status = 'error';
+				s.lastError = `Warmup gagal (${msg})`;
+				return;
 			}
 			s.status = 'ready';
-		} catch {
+		} catch (err) {
 			s.status = 'error';
 			s.model = null;
+			s.lastError = err instanceof Error ? err.message : String(err);
 		}
+	}
+
+	/** Retry a failed slot (clears error state first). */
+	async retrySlot(key: ModelSlot['key']): Promise<void> {
+		const s = this.slots.find((x) => x.key === key);
+		if (!s) return;
+		if (s.status === 'loading' || s.status === 'ready') return;
+		s.status = 'idle';
+		s.lastError = undefined;
+		await this.loadSlot(key);
 	}
 
 	/** Primary: 63-vector normalized joints -> letter + full distribution. */
 	async predictJoint(feats: Float32Array): Promise<JointResult | null> {
 		const s = this.slots[0];
 		if (s.status !== 'ready' || !s.model) return null;
+		if (!feats || feats.length !== 63) return null;
+		for (let i = 0; i < feats.length; i++) if (!Number.isFinite(feats[i])) return null;
 		const t0 = performance.now();
 		const input = tf.tensor2d(feats, [1, 63]);
 		const probs = await runGraph(s.model, input);
@@ -184,6 +243,7 @@ export class SibiEngine {
 	async predictBaseline(px: Float32Array): Promise<ScoredLetter | null> {
 		const s = this.slots[1];
 		if (s.status !== 'ready' || !s.model) return null;
+		if (!px || px.length !== 63) return null;
 		const input = tf.tensor3d(px, [1, 63, 1]);
 		const probs = await runGraph(s.model, input);
 		input.dispose();
@@ -198,6 +258,7 @@ export class SibiEngine {
 	async predictImage(tensorData: Float32Array): Promise<ScoredLetter | null> {
 		const s = this.slots[2];
 		if (s.status !== 'ready' || !s.model) return null;
+		if (!tensorData || tensorData.length !== 128 * 128 * 3) return null;
 		const input = tf.tensor4d(tensorData, [1, 128, 128, 3]);
 		const probs = await runGraph(s.model, input);
 		input.dispose();
@@ -248,9 +309,9 @@ export class PredictionSmoother {
 
 	/** Feed one raw frame prediction. Returns a committed char or null. */
 	push(label: string, conf: number, now = performance.now()): string | null {
-		const windowSize = this.opts.windowSize ?? 12;
-		const minFrames = this.opts.minFrames ?? 7;
-		const minConf = this.opts.minConfidence ?? 0.55;
+		const windowSize = this.opts.windowSize ?? 15;
+		const minFrames = this.opts.minFrames ?? 9;
+		const minConf = this.opts.minConfidence ?? 0.6;
 		const cooldown = this.opts.cooldownMs ?? 1200;
 		this.window.push({ label, conf, t: now });
 		if (this.window.length > windowSize) this.window.shift();
@@ -275,8 +336,8 @@ export class PredictionSmoother {
 		this.progress = Math.min(1, topN / minFrames);
 
 		if (topN >= minFrames && topAvg >= minConf && now - this.lastCommitAt >= cooldown) {
-			const tail = this.window.slice(-3);
-			if (tail.every((w) => w.label === topLabel)) {
+			const tail = this.window.slice(-5);
+			if (tail.length >= 5 && tail.every((w) => w.label === topLabel)) {
 				this.lastCommitAt = now;
 				this.lastEmitted = { label: topLabel, conf: topAvg };
 				this.window = [];

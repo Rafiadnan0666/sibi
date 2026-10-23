@@ -120,7 +120,39 @@ export function suggest(
 	return { suggestions: predictNext(sentenceWords, limit), mode: 'kata berikutnya' };
 }
 
-/** Sentence-case an uppercase word list into readable Indonesian. */
+/** Levenshtein edit distance between two strings. */
+function editDistance(a: string, b: string): number {
+	if (a === b) return 0;
+	if (!a.length) return b.length;
+	if (!b.length) return a.length;
+	let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+	let curr = new Array(b.length + 1);
+	for (let i = 1; i <= a.length; i++) {
+		curr[0] = i;
+		for (let j = 1; j <= b.length; j++) {
+			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+			curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+		}
+		[prev, curr] = [curr, prev];
+	}
+	return prev[b.length];
+}
+
+/** Auto-correct: snap a typed/committed word to the nearest vocabulary word. */
+export function autoCorrectWord(input: string): string {
+	const p = input.trim().toUpperCase();
+	if (!p) return p;
+	if (VOCAB.some((v) => v.w === p)) return p;
+	let best = { w: p, d: Infinity };
+	for (const v of VOCAB) {
+		const d = editDistance(p, v.w);
+		if (d < best.d) best = { w: v.w, d };
+	}
+	// only correct if close enough
+	const threshold = Math.max(1, Math.floor(p.length / 4));
+	if (best.d <= threshold && best.d <= 3) return best.w;
+	return p;
+}
 export function toSentence(words: string[]): string {
 	if (words.length === 0) return '';
 	const s = words.join(' ').toLowerCase();

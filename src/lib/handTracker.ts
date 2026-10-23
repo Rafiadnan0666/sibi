@@ -3,6 +3,12 @@
 // comes from the CNN classifier; gestures below only drive the interface.
 
 import type { HandLandmark } from './types';
+import type {
+	FilesetResolver,
+	HandLandmarker,
+	HandLandmarkerResult,
+	NormalizedLandmark
+} from '@mediapipe/tasks-vision';
 
 export type ControlGesture =
 	| 'none'
@@ -96,73 +102,162 @@ export function handBoundingBox(
 
 // --- HandLandmarker loader (lazy, CDN wasm) ----------------------------------
 
-interface LandmarkerResult {
-	landmarks?: HandLandmark[][];
-	handedness?: { categoryName: string }[][];
+export type VisionStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+let visionStatus: VisionStatus = 'idle';
+let visionError: string = '';
+
+export function getVisionStatus(): VisionStatus {
+	return visionStatus;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let landmarker: any = null;
-let landmarkerLoading: Promise<unknown> | null = null;
+export function getVisionError(): string {
+	return visionError;
+}
 
-export async function ensureHandLandmarker(): Promise<unknown> {
+function toHandLandmarks(list: NormalizedLandmark[][]): HandLandmark[][] {
+	return list.map((hand) => hand.map((p) => ({ x: p.x, y: p.y, z: p.z })));
+}
+
+let landmarker: HandLandmarker | null = null;
+let landmarkerLoading: Promise<HandLandmarker> | null = null;
+// MediaPipe VIDEO mode rejects non-increasing timestamps; rAF timestamps are
+// usually monotonic, but background tabs / duplicate frames can repeat them.
+let lastDetectTs = 0;
+let prevLm: HandLandmark[] | null = null;
+let lostFrames = 0;
+
+async function createLandmarker(
+	FilesetResolverCtor: typeof FilesetResolver,
+	HandLandmarkerCtor: typeof HandLandmarker,
+	delegate: 'GPU' | 'CPU'
+): Promise<HandLandmarker> {
+	const fileset = await FilesetResolverCtor.forVisionTasks(
+		'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
+	);
+	return await HandLandmarkerCtor.createFromOptions(fileset, {
+		baseOptions: {
+			modelAssetPath:
+				'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+			delegate
+		},
+		runningMode: 'VIDEO',
+		numHands: 1,
+		minHandDetectionConfidence: 0.4,
+		minHandPresenceConfidence: 0.6,
+		minTrackingConfidence: 0.6
+	});
+}
+
+export async function ensureHandLandmarker(): Promise<HandLandmarker> {
 	if (landmarker) return landmarker;
 	if (landmarkerLoading) return landmarkerLoading;
+	visionStatus = 'loading';
+	visionError = '';
 	landmarkerLoading = (async () => {
 		const vision = await import('@mediapipe/tasks-vision');
-		const { FilesetResolver, HandLandmarker } = vision;
-		const fileset = await FilesetResolver.forVisionTasks(
-			'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
-		);
-		landmarker = await HandLandmarker.createFromOptions(fileset, {
-			baseOptions: {
-				modelAssetPath:
-					'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-				delegate: 'GPU'
-			},
-			runningMode: 'VIDEO',
-			numHands: 2,
-			minHandDetectionConfidence: 0.4,
-			minHandPresenceConfidence: 0.5,
-			minTrackingConfidence: 0.5
-		});
+		const { FilesetResolver: ResolverCtor, HandLandmarker: Ctor } = vision;
+		// GPU first for speed; CPU fallback for machines/browsers where the
+		// GPU delegate fails (previously tracking silently never started).
+		try {
+			landmarker = await createLandmarker(ResolverCtor, Ctor, 'GPU');
+		} catch (gpuErr) {
+			try {
+				landmarker = await createLandmarker(ResolverCtor, Ctor, 'CPU');
+			} catch (cpuErr) {
+				const msg =
+					cpuErr instanceof Error ? cpuErr.message : gpuErr instanceof Error ? gpuErr.message : '';
+				visionStatus = 'error';
+				visionError = `Hand tracking gagal dimuat (GPU+CPU). Periksa koneksi internet. ${msg}`.trim();
+				throw cpuErr;
+			}
+		}
+		visionStatus = 'ready';
 		return landmarker;
 	})();
 	try {
 		return await landmarkerLoading;
+	} catch (e) {
+		// allow retry on next call
+		landmarker = null;
+		throw e;
 	} finally {
 		landmarkerLoading = null;
 	}
 }
 
-export function detectHands(
-	video: HTMLVideoElement,
-	nowMs: number
-): { hands: DecodedHand[]; raw: LandmarkerResult | null } {
-	if (!landmarker) return { hands: [], raw: null };
-	let res: LandmarkerResult | null = null;
+/** Forget the cached landmarker so the next ensureHandLandmarker() retries. */
+export function resetHandLandmarker(): void {
 	try {
-		res = landmarker.detectForVideo(video, nowMs) as LandmarkerResult;
+		landmarker?.close();
+	} catch {
+		// ignore close errors
+	}
+	landmarker = null;
+	landmarkerLoading = null;
+	lastDetectTs = 0;
+	prevLm = null;
+	if (visionStatus === 'error') visionStatus = 'idle';
+}
+
+export interface DetectOutput {
+	hands: DecodedHand[];
+	raw: HandLandmarkerResult | null;
+}
+
+export function detectHands(video: HTMLVideoElement, nowMs: number): DetectOutput {
+	if (!landmarker) return { hands: [], raw: null };
+	if (!video || video.readyState < 2 || (video.videoWidth || 0) === 0)
+		return { hands: [], raw: null };
+	// Guard monotonic timestamps required by VIDEO running mode.
+	const ts = nowMs > lastDetectTs ? nowMs : lastDetectTs + 1;
+	lastDetectTs = ts;
+	let res: HandLandmarkerResult | null = null;
+	try {
+		res = landmarker.detectForVideo(video, ts);
 	} catch {
 		return { hands: [], raw: null };
 	}
 	const vw = video.videoWidth || 640;
 	const vh = video.videoHeight || 480;
 	const hands: DecodedHand[] = [];
-	const list = res.landmarks ?? [];
-	for (let i = 0; i < list.length; i++) {
-		const lm = list[i];
-		if (!lm || lm.length < 21) continue;
+	// Single-hand mode: keep only the highest-confidence detected hand, and
+	// drop low-confidence detections so they can't pollute classification.
+	const rawList = res?.landmarks ? toHandLandmarks(res.landmarks) : [];
+	const scores = res?.handedness ?? [];
+	const order = rawList
+		.map((lm, i) => ({ i, score: scores[i]?.[0]?.score ?? 0 }))
+		.sort((a, b) => b.score - a.score);
+	const chosen = order.length > 0 && (order[0].score === 0 || order[0].score >= 0.5) ? order[0].i : -1;
+	const lm = chosen >= 0 ? rawList[chosen] : null;
+	if (lm && lm.length >= 21) {
 		const { gesture, pinch, pinchDist } = decodeControlGesture(lm);
 		hands.push({
 			landmarks: lm,
 			gesture,
 			pinch,
 			pinchDist,
-			indexTip: { x: 1 - lm[TIP.index].x, y: lm[TIP.index].y }, // mirrored X
+			indexTip: { x: 1 - lm[TIP.index].x, y: lm[TIP.index].y },
 			box: handBoundingBox(lm, vw, vh),
-			handedness: res.handedness?.[i]?.[0]?.categoryName ?? 'Unknown'
+			handedness: res?.handedness?.[chosen]?.[0]?.categoryName ?? 'Unknown'
 		});
+	}
+	// Light temporal smoothing of landmarks for stable classification across
+	// environments (reduces jitter). Reset when hand is lost.
+	if (hands.length === 0) {
+		prevLm = null;
+	} else if (prevLm && prevLm.length === hands[0].landmarks.length) {
+		const a = 0.45;
+		const smoothed = hands[0].landmarks.map((p, i) => ({
+			x: prevLm![i].x * (1 - a) + p.x * a,
+			y: prevLm![i].y * (1 - a) + p.y * a,
+			z: (prevLm![i].z ?? 0) * (1 - a) + (p.z ?? 0) * a
+		}));
+		hands[0].landmarks = smoothed;
+		hands[0].box = handBoundingBox(smoothed, vw, vh);
+		prevLm = smoothed.map((p) => ({ ...p }));
+	} else {
+		prevLm = hands[0].landmarks.map((p) => ({ ...p }));
 	}
 	return { hands, raw: res };
 }

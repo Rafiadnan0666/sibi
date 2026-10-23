@@ -20,16 +20,19 @@ export {
 	JOINT_NAMES
 } from './jointFeatures';
 export type { FingerInfo, FingerState } from './jointFeatures';
-export { completeWord, predictNext, suggest, toSentence } from './languageModel';
+export { completeWord, predictNext, suggest, toSentence, autoCorrectWord } from './languageModel';
 export type { ScoredWord } from './languageModel';
 export {
 	ensureHandLandmarker,
+	resetHandLandmarker,
+	getVisionStatus,
+	getVisionError,
 	detectHands,
 	decodeControlGesture,
 	drawHandOverlay,
 	handBoundingBox
 } from './handTracker';
-export type { ControlGesture, DecodedHand } from './handTracker';
+export type { ControlGesture, DecodedHand, DetectOutput, VisionStatus } from './handTracker';
 export {
 	loadHistory,
 	saveHistoryEntry,

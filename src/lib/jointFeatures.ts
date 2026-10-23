@@ -1,8 +1,10 @@
 // Joint (sendi) feature engineering + skeleton analytics.
-// Feature contract MUST match training (python retrain_joint.py):
+// Feature contract MUST match training (python retrain_joint.py v2):
 //   px = [x*W, y*H, z_raw] per joint (MediaPipe indices 0..20),
-//   feat = (px - wrist) / ||middle_mcp - wrist||, flattened -> 63-vector.
-// Mirror-agnostic: training saw mirrored copies, so pass hands through as-is.
+//   d = (px - wrist) / ||middle_mcp - wrist||,
+//   rotate XY by atan2(mx,my) so middle_mcp lands on +Y (camera-roll invariant),
+//   mirror X if thumb base (joint 1) is on -X (left/right-hand invariant),
+//   flattened -> 63-vector.
 
 import type { HandLandmark } from './types';
 
@@ -44,7 +46,7 @@ function pts(lm: HandLandmark[], W: number, H: number): Pt[] {
 	return lm.map((p) => ({ x: p.x * W, y: p.y * H, z: p.z ?? 0 }));
 }
 
-/** Normalized 63-vector for the primary joint model (translation+scale invariant). */
+/** Canonical 63-vector for the joint model v2 (translation+scale+roll+hand invariant). */
 export function landmarksToFeatures(lm: HandLandmark[], W: number, H: number): Float32Array {
 	const P = pts(lm, W, H);
 	const w = P[0];
@@ -52,11 +54,28 @@ export function landmarksToFeatures(lm: HandLandmark[], W: number, H: number): F
 	// EXACT training replica: size in pixel space, z kept in raw MP units.
 	const size =
 		Math.hypot(mcp.x - w.x, mcp.y - w.y, mcp.z - w.z) + 1e-6;
+	const dx = new Array<number>(21);
+	const dy = new Array<number>(21);
+	const dz = new Array<number>(21);
+	for (let i = 0; i < 21; i++) {
+		dx[i] = (P[i].x - w.x) / size;
+		dy[i] = (P[i].y - w.y) / size;
+		dz[i] = (P[i].z - w.z) / size;
+	}
+	// Canonical rotation: middle_mcp (joint 9) onto the +Y axis.
+	const phi = Math.atan2(dx[9], dy[9]);
+	const ca = Math.cos(phi);
+	const sa = Math.sin(phi);
 	const out = new Float32Array(63);
 	for (let i = 0; i < 21; i++) {
-		out[i * 3] = (P[i].x - w.x) / size;
-		out[i * 3 + 1] = (P[i].y - w.y) / size;
-		out[i * 3 + 2] = (P[i].z - w.z) / size;
+		out[i * 3] = dx[i] * ca - dy[i] * sa;
+		out[i * 3 + 1] = dx[i] * sa + dy[i] * ca;
+		out[i * 3 + 2] = dz[i];
+	}
+	// Canonical mirror: thumb base (joint 1) always on +X, so left and
+	// right hands produce the same vector for the same SIBI handshape.
+	if (out[1 * 3] < 0) {
+		for (let i = 0; i < 21; i++) out[i * 3] *= -1;
 	}
 	return out;
 }

@@ -6,7 +6,9 @@ Adapts the 98% Kaggle notebook (Denty Nirwana Bintang, Apache 2.0):
   Adam 1e-4, batch 32, <=50 epochs, EarlyStopping val_loss(p5)+ReduceLROnPlateau
   factor 0.2(p3), strong augmentation (rot20/shift.15/zoom.2/bright/flip).
 Tweaks for this project: tf.data pipeline (no ImageDataGenerator),
-  preprocess_input at train time, balanced class weights (J=45,Z=49 vs ~270),
+  preprocess_input at train time, balanced class weights capped 3x (J=45,Z=49),
+  MobileNetV2 + GAP head (the notebook's V1+GMP combo cannot train here:
+  ReLU6/GMP constant channels explode head BatchNorm, diagnosed 2026-10-02),
   same stratified 80/20 seed 42, ROC-AUC + per-letter reports for proof.
 
 In : C:\\Users\\BRAVO\\Downlo\\archive\\SIBI_v3_224\\A-Z (offline hand-crop cache)
@@ -37,14 +39,14 @@ def collect(data_dir: Path):
     return np.array(paths), np.array(labels), letters
 
 
-def datasets(tr_p, tr_y, te_p, te_y, batch, seed, n_cls):
+def datasets(tr_p, tr_y, te_p, te_y, batch, seed):
     import tensorflow as tf
-    from tensorflow.keras.applications.mobilenet import preprocess_input
+    from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
     def decode(p, y):
         im = tf.image.decode_jpeg(tf.io.read_file(p), channels=3)
         im = tf.image.resize(im, (224, 224))
-        return tf.cast(im, tf.float32), tf.one_hot(y, n_cls)
+        return tf.cast(im, tf.float32), y
 
     aug = tf.keras.Sequential([
         tf.keras.layers.RandomFlip("horizontal"),
@@ -70,25 +72,34 @@ def datasets(tr_p, tr_y, te_p, te_y, batch, seed, n_cls):
 
 def build(n_cls):
     import tensorflow as tf
-    from tensorflow.keras.applications import MobileNet
+    from tensorflow.keras.applications import MobileNetV2
 
-    base = MobileNet(include_top=False, weights="imagenet",
-                     input_shape=(224, 224, 3))
+    # NOTE: notebook's MobileNetV1 + GlobalMaxPooling2D does not train in this
+    # stack (diagnosed 2026-10-02): ReLU6-capped V1 features max out at 6.0 on
+    # most channels, so GMP outputs near-constant vectors; the head BatchNorm
+    # then divides by ~zero batch variance, exploding logits into saturated
+    # softmax (init loss 4.45, frozen 4%-acc forever). MobileNetV2 +
+    # GlobalAveragePooling (proven: 84.75% v1) has smooth feature variance.
+    base = MobileNetV2(include_top=False, weights="imagenet",
+                       input_shape=(224, 224, 3))
     base.trainable = False  # phase 1: frozen; unfreeze last 40 for fine-tune
     inputs = tf.keras.Input(shape=(224, 224, 3))
     x = base(inputs, training=False)
-    x = tf.keras.layers.GlobalMaxPooling2D()(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Dense(1024, activation="relu")(x)
-    x = tf.keras.layers.Dropout(0.3)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(0.40)(x)
     x = tf.keras.layers.Dense(512, activation="relu")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(0.25)(x)
+    x = tf.keras.layers.Dense(256, activation="relu")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dropout(0.20)(x)
     outputs = tf.keras.layers.Dense(n_cls, activation="softmax")(x)
     model = tf.keras.Model(inputs, outputs)
-    model.compile(optimizer=tf.keras.optimizers.Adam(1e-4),
-                  loss="categorical_crossentropy",
+    model.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
+                  loss="sparse_categorical_crossentropy",
                   metrics=["accuracy",
-                           tf.keras.metrics.TopKCategoricalAccuracy(k=3, name="top3")])
+                           tf.keras.metrics.SparseTopKCategoricalAccuracy(k=3, name="top3")])
     return model, base
 
 
@@ -128,10 +139,10 @@ def main():
             w.writerow([c, i, int((labels == i).sum()),
                         int((tr_y == i).sum()), int((te_y == i).sum())])
 
-    tr_ds, te_ds = datasets(tr_p, tr_y, te_p, te_y, args.batch, args.seed,
-                            len(letters))
-    cw = compute_class_weight("balanced", classes=np.arange(len(letters)), y=tr_y)
-    cw = {i: float(v) for i, v in enumerate(cw)}
+    tr_ds, te_ds = datasets(tr_p, tr_y, te_p, te_y, args.batch, args.seed)
+    cw_raw = compute_class_weight("balanced", classes=np.arange(len(letters)), y=tr_y)
+    cw = {i: min(3.0, float(v)) for i, v in enumerate(cw_raw)}  # cap: J/Z stay
+    # boosted but 5.6x raw weights destabilize BN batches; 3x is plenty.
     print("class_weight J/Z:", cw[letters.index("J")], cw[letters.index("Z")],
           flush=True)
 
@@ -155,9 +166,9 @@ def main():
     for layer in base.layers[:-40]:
         layer.trainable = False
     model.compile(optimizer=tf.keras.optimizers.Adam(1e-5),
-                  loss="categorical_crossentropy",
+                  loss="sparse_categorical_crossentropy",
                   metrics=["accuracy",
-                           tf.keras.metrics.TopKCategoricalAccuracy(k=3, name="top3")])
+                           tf.keras.metrics.SparseTopKCategoricalAccuracy(k=3, name="top3")])
     ft_epochs = max(4, args.epochs // 4)
     print(f"=== fine-tune last 40 backbone layers, up to {ft_epochs} epochs "
           f"(lr=1e-5) ===", flush=True)
@@ -180,7 +191,7 @@ def main():
     yt, yp, pr = [], [], []
     for xb, yb in te_ds:
         pb = model.predict(xb, verbose=0)
-        yt.extend(np.argmax(yb.numpy(), axis=1).tolist())
+        yt.extend(np.asarray(yb).tolist())
         yp.extend(np.argmax(pb, axis=1).tolist())
         pr.extend(pb.tolist())
     infer_ms = (time.time() - t0) / max(1, len(yt)) * 1000.0
@@ -222,7 +233,7 @@ def main():
                                            zero_division=0)),
                "per_class": per,
                "input": "224x224 MobileNet preprocess_input [-1,1] (hand-crop cache)",
-               "model": "MobileNet-imagenet 224 phase1-frozen + GMP/BN/1024/Drop.3/BN/512, ft-last40 lr1e-5, Adam 1e-4"}
+               "model": "MobileNetV2-imagenet 224 phase1-frozen Adam1e-3 + GAP/BN/512/BN/256, ft-last40 lr1e-5"}
     (out / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     (out / "labels.json").write_text(json.dumps(letters, indent=2), encoding="utf-8")
     with open(out / "per_class.csv", "w", newline="") as f:
