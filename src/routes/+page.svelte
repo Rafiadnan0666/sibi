@@ -785,208 +785,198 @@
 		</div>
 	{/if}
 
-<!-- MAIN WORKSPACE -->
+<!-- CAMERA -->
 <section class="brutal-lg overflow-hidden rounded-2xl bg-white">
-	<div class="flex flex-col gap-4 p-4 lg:flex-row">
-		<!-- LEFT: hapus satu huruf (isyarat fist) -->
-		<aside class="flex flex-col gap-3 lg:w-56">
-			<div class="brutal-sm rounded-xl bg-[#FF90E8] p-3 text-center">
-				<p class="text-[11px] font-bold tracking-widest uppercase opacity-70">Hapus huruf</p>
-				<p class="font-display text-3xl">FIST</p>
-				<p class="mt-1 text-xs font-bold">Tahan isyarat fist untuk hapus</p>
-				<button onclick={deleteLast} class="brutal-btn mt-3 w-full rounded-xl bg-white px-3 py-2 text-xs font-black uppercase">
-					Hapus satu
-				</button>
-			</div>
-			<div class="brutal-sm rounded-xl bg-white p-3">
-				<p class="text-[11px] font-bold tracking-widest uppercase opacity-60">Huruf terakhir</p>
-				<p class="font-display text-2xl">{recentChars.length ? recentChars[recentChars.length - 1] : '-'}</p>
-				<p class="mt-1 text-[11px] font-semibold opacity-60">10 huruf: {recentChars.length ? recentChars.join(' ') : '-'}</p>
-			</div>
-		</aside>
-
-		<!-- MIDDLE: kamera besar -->
-		<section class="min-w-0 flex-1">
-			<div class="relative bg-[#111]">
-				<video
-					bind:this={videoEl}
-					class="mirror aspect-video max-h-[80vh] w-full object-cover {camOn ? '' : 'hidden'}"
-					playsinline
-					muted
-					autoplay
-				></video>
-				<canvas
-					bind:this={overlayEl}
-					class="pointer-events-none absolute inset-0 h-full w-full {camOn ? '' : 'hidden'}"
-				></canvas>
-				{#if camOn}
-					{#if handsFound}
-						<div class="absolute top-3 right-3 z-10 rounded-2xl border-4 border-black bg-[#FFD02B] px-4 py-2 text-center shadow-[6px_6px_0_#000]">
-							<p class="font-display text-6xl leading-none sm:text-7xl">{jointLabel}</p>
-							<p class="mt-1 text-xs font-black uppercase">
-								{Math.round(jointConf * 100)}% | fusi {Math.round(fusedConf * 100)}%
-							</p>
-							<div class="mt-1 h-2 w-28 overflow-hidden rounded-full border-2 border-black bg-white sm:w-36">
-								<div class="h-full bg-green-500" style="width:{Math.round(stability * 100)}%"></div>
-							</div>
-							<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">stabil {Math.round(stability * 100)}%</p>
-						</div>
-					{/if}
-					{#if !handsFound && !noSignal}
-						<div class="pointer-events-none absolute inset-0 grid place-items-center">
-							<div class="grid h-[62%] w-[40%] place-items-center rounded-2xl border-4 border-dashed border-[#FFD02B]/70">
-								<span class="rounded-md bg-black/70 px-2 py-0.5 text-[11px] font-bold text-[#FFD02B]">tangan di sini</span>
-							</div>
-						</div>
-					{/if}
-					{#if handHint && !noSignal}
-						<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-4 py-1.5 text-center text-xs font-black uppercase">
-							{handHint}
-						</div>
-					{/if}
-					{#if noSignal}
-						<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FF90E8] px-4 py-2 text-center">
-							<p class="text-xs font-black uppercase">Stream kosong: tidak ada gambar</p>
-							<p class="text-[11px] font-bold">Kamera mungkin dipakai aplikasi lain atau salah perangkat.</p>
-						</div>
-					{/if}
-					<div class="absolute bottom-12 left-2 right-2 z-10 flex flex-wrap gap-1.5">
-						{#if words.length}
-							{#each words as w, i}
-								<span class="sticker flex items-center gap-1 rounded-lg bg-white/95 px-2 py-1 text-xs font-black uppercase {dragFrom === i ? 'opacity-50' : ''}">
-									<button onclick={() => moveWord(i, -1)} disabled={i === 0} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kiri">L</button>
-									<span>{w}</span>
-									<button onclick={() => removeWord(i)} class="rounded px-1 text-xs font-black opacity-60 hover:opacity-100" title="Hapus">x</button>
-									<button onclick={() => moveWord(i, 1)} disabled={i === words.length - 1} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kanan">R</button>
-								</span>
-							{/each}
-						{/if}
-						{#if prefix}
-							<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
-						{/if}
+	<div class="relative bg-[#111]">
+		<video
+			bind:this={videoEl}
+			class="mirror aspect-video max-h-[80vh] w-full object-cover {camOn ? '' : 'hidden'}"
+			playsinline
+			muted
+			autoplay
+		></video>
+		<canvas
+			bind:this={overlayEl}
+			class="pointer-events-none absolute inset-0 h-full w-full {camOn ? '' : 'hidden'}"
+		></canvas>
+		{#if camOn}
+			{#if handsFound}
+				<div class="absolute top-3 right-3 z-10 rounded-2xl border-4 border-black bg-[#FFD02B] px-4 py-2 text-center shadow-[6px_6px_0_#000]">
+					<p class="font-display text-6xl leading-none sm:text-7xl">{jointLabel}</p>
+					<p class="mt-1 text-xs font-black uppercase">
+						{Math.round(jointConf * 100)}% · fusi {Math.round(fusedConf * 100)}%
+					</p>
+					<div class="mt-1 h-2 w-28 overflow-hidden rounded-full border-2 border-black bg-white sm:w-36">
+						<div class="h-full bg-green-500" style="width:{Math.round(stability * 100)}%"></div>
 					</div>
-					<div class="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
-						<span class="sticker rounded-md bg-white px-2 py-0.5">FPS {fps}</span>
-						<span class="sticker rounded-md bg-white px-2 py-0.5">sendi {inferMs} ms</span>
-						<span class="sticker rounded-md px-2 py-0.5 {handsFound ? 'bg-green-300' : 'bg-[#FF90E8]'}">
-							{handsFound ? 'tangan OK' : 'cari tangan...'}
-						</span>
-						{#if gesture !== 'none' && GESTURE_META[gesture]}
-							<span class="sticker rounded-md bg-[#FFD02B] px-2 py-0.5">
-								{GESTURE_META[gesture].icon} {GESTURE_META[gesture].label}
-							</span>
-						{/if}
-					</div>
-				{:else}
-					<div class="grid place-items-center px-6 py-16 text-center text-white">
-						<p class="text-5xl">Kamera</p>
-						<p class="font-display mt-3 text-xl uppercase">Kamera mati</p>
-						<p class="mx-auto mt-1 max-w-md text-sm opacity-80">
-							Nyalakan kamera, lalu peragakan isyarat alfabet SIBI statis. Tahan tiap isyarat sampai bilah stabil penuh.
-						</p>
-						{#if devices.length > 1}
-							<label class="mx-auto mt-3 flex max-w-md items-center gap-2 text-xs font-bold">
-								<span class="shrink-0 uppercase">Kamera:</span>
-								<select
-									value={deviceId}
-									onchange={(e) => void switchCamera((e.target as HTMLSelectElement).value)}
-									class="min-w-0 flex-1 rounded-lg border-2 border-white bg-black px-2 py-1 text-white"
-								>
-									{#each devices as d}
-										<option value={d.id}>{d.label}</option>
-									{/each}
-								</select>
-							</label>
-						{/if}
-						{#if camError}
-							<p class="mx-auto mt-3 max-w-md rounded-lg border-2 border-red-400 bg-red-950 px-3 py-2 text-xs font-bold text-red-200">
-								{camError}
-							</p>
-						{/if}
-						{#if visionError}
-							<div class="mx-auto mt-3 max-w-md rounded-lg border-2 border-yellow-400 bg-yellow-950 px-3 py-2 text-xs font-bold text-yellow-200">
-								<p>{visionError}</p>
-								<button onclick={() => void retryVision()} class="brutal-btn mt-2 rounded-lg bg-[#FFD02B] px-3 py-1 text-xs font-black uppercase text-black">
-									Coba tracking lagi
-								</button>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-			<div class="flex items-center gap-2 border-t-4 border-black bg-white px-4 py-2">
-				{#if !camOn}
-					<button class="brutal-btn rounded-lg bg-black px-5 py-2 text-sm font-bold text-white" onclick={startCamera}>
-						Nyalakan kamera
-					</button>
-				{:else}
-					<button class="brutal-btn rounded-lg bg-white px-5 py-2 text-sm font-bold" onclick={stopCamera}>
-						Matikan
-					</button>
-				{/if}
-				{#if camOn && devices.length > 1}
-					<select
-						value={deviceId}
-						onchange={(e) => void switchCamera((e.target as HTMLSelectElement).value)}
-						class="min-w-0 flex-1 rounded-lg border-2 border-black bg-[#FFF6D6] px-2 py-1 text-xs font-bold"
-					>
-						{#each devices as d}
-							<option value={d.id}>{d.label}</option>
-						{/each}
-					</select>
-				{/if}
-			</div>
-		</section>
-
-		<!-- RIGHT: masukkan huruf -->
-		<aside class="flex flex-col gap-3 lg:w-56">
-			<div class="brutal-sm rounded-xl bg-[#7DF9FF] p-3 text-center">
-				<p class="text-[11px] font-bold tracking-widest uppercase opacity-70">Masukkan huruf</p>
-				<p class="font-display text-3xl">{jointLabel}</p>
-				<p class="mt-1 text-xs font-bold">{Math.round(jointConf * 100)}% keyakinan</p>
-				<button onclick={commitSpace} class="brutal-btn mt-3 w-full rounded-xl bg-white px-3 py-2 text-xs font-black uppercase">
-					Spasi / kunci kata
-				</button>
-			</div>
-			<div class="brutal-sm rounded-xl bg-white p-3">
-				<p class="mb-1.5 text-[11px] font-bold tracking-widest uppercase opacity-60">Ketik manual</p>
-				<input
-					value={prefix}
-					oninput={onManual}
-					placeholder="Ketik huruf (A-Z)"
-					maxlength={24}
-					autocomplete="off"
-					class="brutal-sm w-full rounded-xl bg-white px-3 py-2 text-lg font-black tracking-widest uppercase placeholder:text-sm placeholder:font-semibold placeholder:normal-case placeholder:opacity-40"
-				/>
-				<p class="mt-1 text-[11px] font-semibold opacity-60">A-Z tambah | Backspace hapus | Spasi kunci | Enter ucap</p>
-			</div>
-			<div class="brutal-sm rounded-xl bg-white p-3">
-				<p class="text-[11px] font-bold tracking-widest uppercase opacity-60">Kalimat</p>
-				<p class="font-display min-h-[2rem] text-base leading-snug">{sentence || 'Belum ada.'}</p>
-				<div class="mt-2 grid grid-cols-2 gap-2">
-					<button onclick={speak} class="brutal-btn rounded-lg bg-black px-2 py-1.5 text-xs font-black uppercase text-[#FFD02B]">Ucapkan</button>
-					<button onclick={() => void saveCurrent()} class="brutal-btn rounded-lg bg-[#7DF9FF] px-2 py-1.5 text-xs font-black uppercase">Simpan</button>
+					<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">stabil {Math.round(stability * 100)}%</p>
 				</div>
+			{/if}
+			{#if !handsFound && !noSignal}
+				<div class="pointer-events-none absolute inset-0 grid place-items-center">
+					<div class="grid h-[62%] w-[40%] place-items-center rounded-2xl border-4 border-dashed border-[#FFD02B]/70">
+						<span class="rounded-md bg-black/70 px-2 py-0.5 text-[11px] font-bold text-[#FFD02B]">tangan di sini</span>
+					</div>
+				</div>
+			{/if}
+			{#if handHint && !noSignal}
+				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-4 py-1.5 text-center text-xs font-black uppercase">
+					{handHint}
+				</div>
+			{/if}
+			{#if noSignal}
+				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FF90E8] px-4 py-2 text-center">
+					<p class="text-xs font-black uppercase">Stream kosong: tidak ada gambar</p>
+					<p class="text-[11px] font-bold">Kamera mungkin dipakai aplikasi lain atau salah perangkat.</p>
+				</div>
+			{/if}
+			<div class="absolute bottom-12 left-2 right-2 z-10 flex flex-wrap gap-1.5">
+				{#if words.length}
+					{#each words as w, i}
+						<span class="sticker flex items-center gap-1 rounded-lg bg-white/95 px-2 py-1 text-xs font-black uppercase {dragFrom === i ? 'opacity-50' : ''}">
+							<button onclick={() => moveWord(i, -1)} disabled={i === 0} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kiri">L</button>
+							<span>{w}</span>
+							<button onclick={() => removeWord(i)} class="rounded px-1 text-xs font-black opacity-60 hover:opacity-100" title="Hapus">x</button>
+							<button onclick={() => moveWord(i, 1)} disabled={i === words.length - 1} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kanan">R</button>
+						</span>
+					{/each}
+				{/if}
+				{#if prefix}
+					<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
+				{/if}
 			</div>
-		</aside>
+			<div class="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
+				<span class="sticker rounded-md bg-white px-2 py-0.5">FPS {fps}</span>
+				<span class="sticker rounded-md bg-white px-2 py-0.5">sendi {inferMs} ms</span>
+				<span class="sticker rounded-md px-2 py-0.5 {handsFound ? 'bg-green-300' : 'bg-[#FF90E8]'}">
+					{handsFound ? 'tangan OK' : 'cari tangan...'}
+				</span>
+				{#if gesture !== 'none' && GESTURE_META[gesture]}
+					<span class="sticker rounded-md bg-[#FFD02B] px-2 py-0.5">
+						{GESTURE_META[gesture].icon} {GESTURE_META[gesture].label}
+					</span>
+				{/if}
+			</div>
+		{:else}
+			<div class="grid place-items-center px-6 py-16 text-center text-white">
+				<p class="text-5xl">Kamera</p>
+				<p class="font-display mt-3 text-xl uppercase">Kamera mati</p>
+				<p class="mx-auto mt-1 max-w-md text-sm opacity-80">
+					Nyalakan kamera, lalu peragakan isyarat alfabet SIBI statis. Tahan tiap isyarat sampai bilah stabil penuh.
+				</p>
+				{#if devices.length > 1}
+					<label class="mx-auto mt-3 flex max-w-md items-center gap-2 text-xs font-bold">
+						<span class="shrink-0 uppercase">Kamera:</span>
+						<select
+							value={deviceId}
+							onchange={(e) => void switchCamera((e.target as HTMLSelectElement).value)}
+							class="min-w-0 flex-1 rounded-lg border-2 border-white bg-black px-2 py-1 text-white"
+						>
+							{#each devices as d}
+								<option value={d.id}>{d.label}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
+				{#if camError}
+					<p class="mx-auto mt-3 max-w-md rounded-lg border-2 border-red-400 bg-red-950 px-3 py-2 text-xs font-bold text-red-200">
+						{camError}
+					</p>
+				{/if}
+				{#if visionError}
+					<div class="mx-auto mt-3 max-w-md rounded-lg border-2 border-yellow-400 bg-yellow-950 px-3 py-2 text-xs font-bold text-yellow-200">
+						<p>{visionError}</p>
+						<button onclick={() => void retryVision()} class="brutal-btn mt-2 rounded-lg bg-[#FFD02B] px-3 py-1 text-xs font-black uppercase text-black">
+							Coba tracking lagi
+						</button>
+					</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
+	<div class="flex items-center gap-2 border-t-4 border-black bg-white px-4 py-2">
+		{#if !camOn}
+			<button class="brutal-btn rounded-lg bg-black px-5 py-2 text-sm font-bold text-white" onclick={startCamera}>
+				Nyalakan kamera
+			</button>
+		{:else}
+			<button class="brutal-btn rounded-lg bg-white px-5 py-2 text-sm font-bold" onclick={stopCamera}>
+				Matikan
+			</button>
+		{/if}
+		{#if camOn && devices.length > 1}
+			<select
+				value={deviceId}
+				onchange={(e) => void switchCamera((e.target as HTMLSelectElement).value)}
+				class="min-w-0 flex-1 rounded-lg border-2 border-black bg-[#FFF6D6] px-2 py-1 text-xs font-bold"
+			>
+				{#each devices as d}
+					<option value={d.id}>{d.label}</option>
+				{/each}
+			</select>
+		{/if}
+	</div>
+</section>
 
-	<!-- BOTTOM: saran kata -->
-	<div class="border-t-4 border-black bg-[#FFF6D6] p-4">
-		<p class="mb-2 text-[11px] font-bold tracking-widest uppercase opacity-60">
-			Prediksi: {suggestion.mode} (klik untuk pilih)
-		</p>
-		<div class="grid grid-cols-3 gap-2">
-			{#each suggestion.suggestions as s, i}
-				<button
-					onclick={() => applySuggestion(s)}
-					class="brutal-btn rounded-xl bg-white px-2 py-2.5 text-sm font-black uppercase"
-				>
-					<span class="mr-1 rounded bg-black px-1.5 py-0.5 text-[11px] text-[#FFD02B]">{i + 1}</span>{s.word}
-					<span class="block text-[10px] font-semibold normal-case opacity-60">{s.why}</span>
-				</button>
-			{/each}
+<!-- OUTPUT -->
+<section class="brutal-lg overflow-hidden rounded-2xl bg-white">
+	<div class="border-b-4 border-black bg-black px-4 py-3">
+		<h2 class="font-display text-base uppercase text-[#FFD02B] sm:text-lg">Kalimat Indonesia</h2>
+	</div>
+	<div class="space-y-4 p-4">
+		<div class="brutal-sm rounded-xl bg-[#FFD02B] p-3">
+			<p class="text-[11px] font-bold tracking-widest uppercase opacity-70">Hasil kalimat</p>
+			<p class="font-display min-h-[2.5rem] text-xl leading-snug sm:text-2xl">
+				{sentence || 'Belum ada. Isyarat dulu di kamera, atau ketik di bawah.'}
+			</p>
 		</div>
+		<div>
+			<p class="mb-1.5 text-[11px] font-bold tracking-widest uppercase opacity-60">Ketik manual</p>
+			<input
+				value={prefix}
+				oninput={onManual}
+				placeholder="Ketik huruf di sini (A-Z)"
+				maxlength={24}
+				autocomplete="off"
+				class="brutal-sm w-full rounded-xl bg-white px-3 py-2 text-lg font-black tracking-widest uppercase placeholder:text-sm placeholder:font-semibold placeholder:normal-case placeholder:opacity-40"
+			/>
+			<p class="mt-1 text-[11px] font-semibold opacity-60">
+				Keyboard: A-Z tambah huruf, Backspace hapus, Spasi kunci kata, Enter ucapkan.
+			</p>
+		</div>
+		<div>
+			<p class="mb-2 text-[11px] font-bold tracking-widest uppercase opacity-60">
+				Prediksi: {suggestion.mode} (klik untuk pilih)
+			</p>
+			<div class="grid grid-cols-3 gap-2">
+				{#each suggestion.suggestions as s, i}
+					<button
+						onclick={() => applySuggestion(s)}
+						class="brutal-btn rounded-xl bg-white px-2 py-2.5 text-sm font-black uppercase"
+					>
+						<span class="mr-1 rounded bg-black px-1.5 py-0.5 text-[11px] text-[#FFD02B]">{i + 1}</span>{s.word}
+						<span class="block text-[10px] font-semibold normal-case opacity-60">{s.why}</span>
+					</button>
+				{/each}
+			</div>
+		</div>
+		<div class="grid grid-cols-4 gap-2">
+			<button onclick={commitSpace} class="brutal-btn rounded-xl bg-white px-1 py-2 text-xs font-black uppercase">
+				Spasi
+			</button>
+			<button onclick={deleteLast} class="brutal-btn rounded-xl bg-[#FF90E8] px-1 py-2 text-xs font-black uppercase">
+				Hapus
+			</button>
+			<button onclick={speak} class="brutal-btn rounded-xl bg-black px-1 py-2 text-xs font-black uppercase text-[#FFD02B]">
+				Ucapkan
+			</button>
+			<button onclick={() => void saveCurrent()} class="brutal-btn rounded-xl bg-[#7DF9FF] px-1 py-2 text-xs font-black uppercase">
+				Simpan
+			</button>
+		</div>
+		<button onclick={clearAll} class="brutal-btn w-full rounded-xl bg-white px-3 py-2 text-xs font-bold uppercase">
+			Bersihkan kalimat
+		</button>
 	</div>
 </section>
 	<!-- GESTURES -->
