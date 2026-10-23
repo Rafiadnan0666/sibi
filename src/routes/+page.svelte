@@ -98,6 +98,9 @@
 	let lastMotion = 0;
 	let fps: number = $state(0);
 	let handsFound: boolean = $state(false);
+	let cameraZone: 'left' | 'middle' | 'right' = $state('middle');
+	let zoneSince = 0;
+	let zoneActionDone = false;
 	let handHint: string = $state('');
 	let lastHintAt = 0;
 	let debugOpen: boolean = $state(false);
@@ -125,6 +128,8 @@
 	let lastImgAt = 0;
 	let lastUiAt = 0;
 	let lastFrameAt = 0;
+	let lastUiStateAt = 0;
+	let lastFpsAt = 0;
 	let raf = 0;
 
 	// Sample collector: record YOUR OWN hand as labeled training data.
@@ -393,7 +398,10 @@
 		raf = requestAnimationFrame(loop);
 		const dt = t - lastFrameAt;
 		lastFrameAt = t;
-		if (dt > 0) fps = Math.round(fps * 0.9 + (1000 / dt) * 0.1);
+		if (dt > 0 && t - lastFpsAt > 200) {
+			fps = Math.round(fps * 0.9 + (1000 / dt) * 0.1);
+			lastFpsAt = t;
+		}
 		if (!videoEl || videoEl.readyState < 2) return;
 
 		// Watchdog: live stream but black frames (camera held by another app).
@@ -411,10 +419,48 @@
 		const vw = videoEl.videoWidth || 640;
 		const vh = videoEl.videoHeight || 480;
 		const { hands: found } = detectHands(videoEl, t);
-		hands = found;
-		handsFound = found.length > 0;
+		if (t - lastUiStateAt > 100) {
+			hands = found;
+			handsFound = found.length > 0;
+			gesture = (found[0]?.gesture ?? 'none') as ControlGesture;
+			lastUiStateAt = t;
+		}
 		const primary = found[0];
-		gesture = primary?.gesture ?? 'none';
+		// The preview is mirrored, so invert the tracked x coordinate to match
+		// the colored zones the user sees on screen.
+		if (primary) {
+			const visualX = 1 - (primary.box.x + primary.box.w / 2) / vw;
+			const nextZone = visualX < 1 / 3 ? 'left' : visualX > 2 / 3 ? 'right' : 'middle';
+			if (nextZone !== cameraZone) {
+				cameraZone = nextZone;
+				zoneSince = t;
+				zoneActionDone = false;
+			}
+			if (nextZone === 'middle') {
+				zoneSince = 0;
+				zoneActionDone = false;
+			} else {
+				if (!zoneSince) zoneSince = t;
+				if (!zoneActionDone && t - zoneSince >= 2000) {
+					if (nextZone === 'right' && /^[A-Z]$/.test(jointLabel)) {
+						commitChar(jointLabel);
+						recentChars = [...recentChars, jointLabel].slice(-10);
+						flash(`Terkunci: ${jointLabel}`);
+						lockedLetter = jointLabel;
+						if (lockedTimer) clearTimeout(lockedTimer);
+						lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
+					} else if (nextZone === 'left') {
+						deleteLast();
+						flash('Huruf terakhir dihapus');
+					}
+					zoneActionDone = true;
+				}
+			}
+		} else {
+			cameraZone = 'middle';
+			zoneSince = 0;
+			zoneActionDone = false;
+		}
 
 		// Framing hints so the user can position their hand where tracking works.
 		if (t - lastHintAt > 500) {
@@ -550,7 +596,7 @@
 					// Confusing-alphabet guard: 50/50 frames never commit.
 					if (fused >= 0.4 && margin >= MARGIN_MIN) {
 						lowConfFrames = 0;
-						const committed = smoother.push(out.label, fused, t);
+						const committed = cameraZone === 'middle' ? smoother.push(out.label, fused, t) : null;
 						stability = smoother.progress;
 						if (committed) {
 							commitChar(committed);
@@ -835,6 +881,13 @@
 			muted
 			autoplay
 		></video>
+		{#if camOn}
+			<div class="pointer-events-none absolute inset-0 z-[1] grid grid-cols-[1fr_2fr_1fr] text-center font-black uppercase">
+				<div class="flex items-center justify-center border-r-4 border-black/70 bg-[#FF90E8]/30 px-1 text-xs sm:text-sm">Kiri · hapus</div>
+				<div class="flex items-center justify-center border-x-2 border-black/40 bg-white/10 px-1 text-xs text-white sm:text-sm">Tengah · netral</div>
+				<div class="flex items-center justify-center border-l-4 border-black/70 bg-green-300/30 px-1 text-xs sm:text-sm">Kanan · ketik</div>
+			</div>
+		{/if}
 		<canvas
 			bind:this={overlayEl}
 			class="pointer-events-none absolute inset-0 h-full w-full {camOn ? '' : 'hidden'}"
