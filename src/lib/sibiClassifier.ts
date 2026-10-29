@@ -321,7 +321,7 @@ export class PredictionSmoother {
 		const windowSize = this.opts.windowSize ?? 15;
 		const minConf = this.opts.minConfidence ?? 0.6;
 		const cooldown = this.opts.cooldownMs ?? 1200;
-		const holdMs = this.opts.holdMs ?? 900;
+		const holdMs = this.opts.holdMs ?? 800;
 		this.window.push({ label, conf, t: now });
 		if (this.window.length > windowSize) this.window.shift();
 
@@ -376,13 +376,14 @@ export class PredictionSmoother {
 			tailOk &&
 			now - this.lastCommitAt >= cooldown
 		) {
+			const committedLabel = this.currentLabel;
 			this.lastCommitAt = now;
-			this.lastEmitted = { label: this.currentLabel, conf: topAvg };
+			this.lastEmitted = { label: committedLabel, conf: topAvg };
 			this.window = [];
 			this.progress = 0;
 			this.currentLabel = '';
 			this.labelStartAt = 0;
-			return this.currentLabel;
+			return committedLabel;
 		}
 		return null;
 	}
