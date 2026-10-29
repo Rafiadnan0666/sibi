@@ -104,8 +104,8 @@
 
 	// Settings. All three models are ON by default; unchecking only pauses
 	// that vote for the session (model stays cached for instant re-enable).
-	let minConf: number = $state(0.5);
-	let cooldownMs: number = $state(1500);
+	let minConf: number = $state(0.4);
+	let cooldownMs: number = $state(900);
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
 	let useBaseline: boolean = $state(true);
@@ -115,7 +115,7 @@
 
 	// Guard against confusing alphabets: top1 must beat top2 by this margin,
 	// otherwise the frame is ignored (no commit, no smoother pollution).
-	const MARGIN_MIN = 0.06;
+	const MARGIN_MIN = 0.05;
 
 	let history: HistoryEntry[] = $state([]);
 	let notice: string = $state('');
@@ -516,7 +516,7 @@
 				s += Math.hypot(primary.landmarks[i].x - lastLm[i].x, primary.landmarks[i].y - lastLm[i].y);
 			}
 			lastMotion = s / primary.landmarks.length;
-			if (lastMotion > 0.03) {
+			if (lastMotion > 0.05) {
 				lastLm = primary.landmarks;
 				return;
 			}
@@ -698,8 +698,8 @@
 		window.addEventListener('keydown', onKey);
 		(async () => {
 			history = await loadHistory();
-			minConf = await loadSetting('minConf', 0.5);
-			cooldownMs = await loadSetting('cooldownMs', 1500);
+			minConf = await loadSetting('minConf', 0.4);
+			cooldownMs = await loadSetting('cooldownMs', 900);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
 			useImage = await loadSetting('useImage', false);
@@ -718,7 +718,7 @@
 				// code-splits it; module types still let TS track engine fully.
 				const mod = await import('$lib/sibiClassifier');
 				engine = new mod.SibiEngine();
-				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
+				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 900 });
 				// Show loading state immediately; engine mutates nested statuses.
 				for (const s of engine.slots) s.status = 'loading';
 				modelSlots = [...engine.slots];
@@ -756,8 +756,8 @@
 	});
 
 	async function restoreDefaults() {
-		minConf = 0.5;
-		cooldownMs = 1500;
+		minConf = 0.4;
+		cooldownMs = 900;
 		grayscale = false;
 		normMode = 'neg-one-one';
 		useBaseline = true;
@@ -767,14 +767,14 @@
 		await saveSetting('grayscale', grayscale);
 		await saveSetting('useBaseline', true);
 		await saveSetting('useImage', false);
-		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
+		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 900 });
 		lastLm = null;
 		flash('Pengaturan dipulihkan ke default');
 	}
 
 	async function onConfChange() {
 		const mod = await import('$lib/sibiClassifier');
-		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 1200 });
+		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 900 });
 		await saveSetting('minConf', minConf);
 		await saveSetting('cooldownMs', cooldownMs);
 		await saveSetting('grayscale', grayscale);

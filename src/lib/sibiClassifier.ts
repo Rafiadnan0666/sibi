@@ -321,7 +321,7 @@ export class PredictionSmoother {
 		const windowSize = this.opts.windowSize ?? 15;
 		const minConf = this.opts.minConfidence ?? 0.6;
 		const cooldown = this.opts.cooldownMs ?? 1200;
-		const holdMs = this.opts.holdMs ?? 1200;
+		const holdMs = this.opts.holdMs ?? 900;
 		this.window.push({ label, conf, t: now });
 		if (this.window.length > windowSize) this.window.shift();
 
@@ -355,7 +355,7 @@ export class PredictionSmoother {
 					this.pendingLabel = topLabel;
 					this.pendingCount = 1;
 				}
-				if (this.pendingCount >= 2) {
+				if (this.pendingCount >= 1) {
 					this.currentLabel = topLabel;
 					this.labelStartAt = now;
 					this.pendingLabel = '';
@@ -368,7 +368,7 @@ export class PredictionSmoother {
 
 		// Need the same label held for holdMs, enough confidence, and cooldown.
 		const tail = this.window.slice(-3);
-		const tailOk = tail.length >= 2 && tail.every((w) => w.label === this.currentLabel || w.label === topLabel);
+		const tailOk = tail.length >= 1 && tail.every((w) => w.label === this.currentLabel || w.label === topLabel);
 		if (
 			this.currentLabel &&
 			topAvg >= minConf &&
