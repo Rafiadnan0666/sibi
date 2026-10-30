@@ -50,6 +50,27 @@ function thumbExtended(lm: HandLandmark[]): boolean {
 	return dist(lm[TIP.thumb], lm[MCP.middle]) > dist(lm[PIP.thumb], lm[MCP.middle]) * 1.15;
 }
 
+/**
+ * Detect the two handshapes used by the dynamic SIBI letters:
+ *  - indexOnly (D shape) is the base for Z
+ *  - pinkyOnly (I shape) is the base for J
+ * The thumb is ignored on purpose: SIBI I / D handshapes vary between signers
+ * and a stiff thumb must not break recognition.
+ */
+export function fingerPattern(lm: HandLandmark[]): {
+	indexOnly: boolean;
+	pinkyOnly: boolean;
+} {
+	const indexUp = fingerExtended(lm, TIP.index, PIP.index, MCP.index);
+	const middleUp = fingerExtended(lm, TIP.middle, PIP.middle, MCP.middle);
+	const ringUp = fingerExtended(lm, TIP.ring, PIP.ring, MCP.ring);
+	const pinkyUp = fingerExtended(lm, TIP.pinky, PIP.pinky, MCP.pinky);
+	return {
+		indexOnly: indexUp && !middleUp && !ringUp && !pinkyUp,
+		pinkyOnly: pinkyUp && !indexUp && !middleUp && !ringUp
+	};
+}
+
 export function decodeControlGesture(lm: HandLandmark[]): {
 	gesture: ControlGesture;
 	pinch: boolean;

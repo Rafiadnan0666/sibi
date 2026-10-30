@@ -29,10 +29,21 @@ export {
 	getVisionError,
 	detectHands,
 	decodeControlGesture,
+	fingerPattern,
 	drawHandOverlay,
 	handBoundingBox
 } from './handTracker';
 export type { ControlGesture, DecodedHand, DetectOutput, VisionStatus } from './handTracker';
+export {
+	pushTrail,
+	trailSegments,
+	trailTravel,
+	trailNet,
+	detectJ,
+	detectZ
+} from './motionLetters';
+export type { TrailPoint, TrailSegment } from './motionLetters';
+export type { SmootherOptions } from './predictionSmoother';
 export {
 	loadHistory,
 	saveHistoryEntry,

@@ -15,9 +15,17 @@
 		getVisionError,
 		detectHands,
 		drawHandOverlay,
+		fingerPattern,
 		type DecodedHand,
 		type ControlGesture
 	} from '$lib/handTracker';
+	import {
+		pushTrail,
+		detectJ,
+		detectZ,
+		trailNet,
+		type TrailPoint
+	} from '$lib/motionLetters';
 	import {
 		loadHistory,
 		saveHistoryEntry,
@@ -62,7 +70,6 @@
 	let jointConf: number = $state(0);
 	let baselineRes: ScoredLetter | null = $state(null);
 	let imageRes: ScoredLetter | null = $state(null);
-	let fusedConf: number = $state(0);
 	let inferMs: number = $state(0);
 	let featVec: number[] = $state([]);
 
@@ -81,41 +88,35 @@
 	let deviceId: string = $state('');
 	let visionReady: boolean = $state(false);
 	let visionError: string = $state('');
-	let hands: DecodedHand[] = $state([]);
+	let handsFound: boolean = $state(false);
+	let handHint: string = $state('');
 	let gesture: ControlGesture = $state('none');
-	let lastGesture: ControlGesture = $state('none');
+	let lastGesture: ControlGesture = 'none';
 	let gestureHold = 0;
 	let fistHoldAt = 0;
 	let peaceHoldAt = 0;
 	let holdProgress = 0;
-	let holdLabel = $state('');
-	let holdProgressUI = $state(0);
+	let holdLabel: string = $state('');
+	let holdProgressUI: number = $state(0);
 	let lastHoldUiAt = 0;
-	let lockedLetter = $state('');
+	let lockedLetter: string = $state('');
 	let lockedTimer: ReturnType<typeof setTimeout> | null = null;
-	let lowConfFrames = 0;
-	let lastLm: DecodedHand['landmarks'] | null = $state(null);
+	let lastLm: DecodedHand['landmarks'] | null = null;
 	let lastMotion = 0;
 	let fps: number = $state(0);
-	let handsFound: boolean = $state(false);
-	let handHint: string = $state('');
 	let lastHintAt = 0;
 	let debugOpen: boolean = $state(false);
 
 	// Settings. All three models are ON by default; unchecking only pauses
 	// that vote for the session (model stays cached for instant re-enable).
-	let minConf: number = $state(0.4);
-	let cooldownMs: number = $state(500);
+	let minConf: number = $state(0.24);
+	let cooldownMs: number = $state(450);
 	let grayscale: boolean = $state(false);
 	let normMode: 'neg-one-one' | 'zero-one' = $state('neg-one-one');
 	let useBaseline: boolean = $state(true);
 	let useImage: boolean = $state(false);
 	let autoCorrect: boolean = $state(true);
 	let dragFrom = $state(-1);
-
-	// Guard against confusing alphabets: top1 must beat top2 by this margin,
-	// otherwise the frame is ignored (no commit, no smoother pollution).
-	const MARGIN_MIN = 0.05;
 
 	let history: HistoryEntry[] = $state([]);
 	let notice: string = $state('');
@@ -127,7 +128,22 @@
 	let lastFrameAt = 0;
 	let lastUiStateAt = 0;
 	let lastFpsAt = 0;
+	let lastDetectAt = 0;
 	let raf = 0;
+
+	// Single-hand cache: MediaPipe runs at ~30 Hz while the overlay still
+	// redraws every rAF. This keeps the UI at a smooth 60 fps without the
+	// landmark network fighting for the same frame budget.
+	let cachedHands: DecodedHand[] = [];
+	// One joint inference at a time: overlapping async predictions are a major
+	// hidden source of lag on slower machines.
+	let predictBusy = false;
+
+	// Dynamic letters J / Z: trace the fingertip while its handshape is held.
+	let motionTrail: TrailPoint[] = [];
+	let motionKind: 'J' | 'Z' | '' = '';
+	let lastMotionLetterAt = 0;
+	let motionLetterUntil = 0;
 
 	// Sample collector: record YOUR OWN hand as labeled training data.
 	// Pick a letter, hold the sign, press record. Download CSV, then merge it:
@@ -178,11 +194,28 @@
 	};
 
 	// Text ops (shared by camera, buttons, manual input, and keyboard).
-	function commitChar(c: string) {
+	function commitChar(c: string): boolean {
+		const ch = c.toUpperCase();
+		if (!/^[A-Z]$/.test(ch)) return false;
+		if (prefix.length >= 24) {
+			flash('Kata sudah 24 huruf. Tekan Spasi untuk mengunci kata.');
+			return false;
+		}
+		prefix += ch;
+		return true;
+	}
+
+	/** Commit a letter chosen directly from the camera candidate chips. */
+	function pickLetter(c: string) {
 		const ch = c.toUpperCase();
 		if (!/^[A-Z]$/.test(ch)) return;
-		if (prefix.length >= 24) return;
-		prefix += ch;
+		if (!commitChar(ch)) return;
+		recentChars = [...recentChars, ch].slice(-10);
+		smoother?.reset();
+		flash(`Dipilih: ${ch}`);
+		lockedLetter = ch;
+		if (lockedTimer) clearTimeout(lockedTimer);
+		lockedTimer = setTimeout(() => (lockedLetter = ''), 1000);
 	}
 
 	function deleteLast() {
@@ -295,6 +328,9 @@
 		} else if (e.key === ' ') {
 			commitSpace();
 			e.preventDefault();
+		} else if (/^[1-3]$/.test(e.key)) {
+			const pick = suggestion.suggestions[Number(e.key) - 1];
+			if (pick) applySuggestion(pick);
 		} else if (e.key === 'Enter') speak();
 	}
 
@@ -382,9 +418,12 @@
 		camOn = false;
 		noSignal = false;
 		noSignalSince = 0;
-		hands = [];
 		handsFound = false;
 		gesture = 'none';
+		cachedHands = [];
+		motionTrail = [];
+		motionKind = '';
+		smoother?.reset();
 		lastLm = null;
 		lastGesture = 'none';
 		gestureHold = 0;
@@ -415,14 +454,58 @@
 
 		const vw = videoEl.videoWidth || 640;
 		const vh = videoEl.videoHeight || 480;
-		const { hands: found } = detectHands(videoEl, t);
+		// Hand landmarks at ~30 Hz while the overlay repaints every rAF. This
+		// keeps the page smooth without the landmark net eating the frame.
+		let found: DecodedHand[] = cachedHands;
+		let freshHands = false;
+		if (t - lastDetectAt >= 32) {
+			lastDetectAt = t;
+			cachedHands = detectHands(videoEl, t).hands;
+			found = cachedHands;
+			freshHands = true;
+		}
 		if (t - lastUiStateAt > 100) {
-			hands = found;
 			handsFound = found.length > 0;
 			gesture = (found[0]?.gesture ?? 'none') as ControlGesture;
 			lastUiStateAt = t;
 		}
 		const primary = found[0];
+
+		// Dynamic SIBI letters J and Z (motion signs the static model cannot
+		// represent). Only runs while the matching handshape is held, and the
+		// whole stroke must complete before anything is committed.
+		if (!primary) {
+			motionKind = '';
+			motionTrail = [];
+		}
+		if (primary && freshHands) {
+			const fp = fingerPattern(primary.landmarks);
+			const kind: 'J' | 'Z' | '' = fp.indexOnly ? 'Z' : fp.pinkyOnly ? 'J' : '';
+			if (kind !== motionKind) {
+				motionKind = kind;
+				motionTrail = [];
+			}
+			if (kind) {
+				const tip = primary.landmarks[kind === 'Z' ? 8 : 20];
+				pushTrail(motionTrail, { x: tip.x, y: tip.y, t });
+				if (t - lastMotionLetterAt > 1500) {
+					const hit = kind === 'Z' ? detectZ(motionTrail) : detectJ(motionTrail);
+					if (hit) {
+						lastMotionLetterAt = t;
+						motionLetterUntil = t + 1200;
+						motionTrail = [];
+						if (commitChar(kind)) {
+							recentChars = [...recentChars, kind].slice(-10);
+							flash(`Terkunci: ${kind} (gerakan)`);
+							lockedLetter = kind;
+							if (lockedTimer) clearTimeout(lockedTimer);
+							lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
+						}
+						smoother?.reset();
+					}
+				}
+			}
+		}
 		// UI state throttled above; gesture handling uses primary every frame.
 		// Framing hints so the user can position their hand where tracking works.
 		if (t - lastHintAt > 500) {
@@ -451,9 +534,9 @@
 				lastGesture = primary.gesture;
 				gestureHold = 1;
 			}
-			// Require the gesture to be held before firing. Fist and peace need
-			// a 2 second hold so transitional shapes can't trigger actions.
-			const HOLD_MS = 1200;
+			// Gesture actions need a short deliberate hold so transitional
+			// handshapes cannot fire them. UI-only: letters use the smoother.
+			const HOLD_MS = 900;
 			const now = performance.now();
 			if (primary.gesture === 'fist') {
 				if (!fistHoldAt) fistHoldAt = now;
@@ -492,6 +575,7 @@
 			peaceHoldAt = 0;
 			holdProgress = 0;
 			holdLabel = '';
+			stability = 0;
 		}
 
 		if (performance.now() - lastHoldUiAt > 80) {
@@ -504,78 +588,90 @@
 	async function classifyFrame(primary: DecodedHand | undefined, t: number, vw: number, vh: number) {
 		if (!engine || !smoother || !primary || !videoEl) return;
 		// Palm = pause recognition so the user can hold without committing.
-		if (primary.gesture === 'palm') return;
+		if (primary.gesture === 'palm') {
+			stability = 0;
+			return;
+		}
 		// Reject tiny / poorly framed hands so they can't become garbage letters.
 		const area = (primary.box.w * primary.box.h) / (vw * vh);
 		if (area < 0.04 || area > 0.9) return;
-		// Motion gate: skip transitional frames (hand moving) to avoid
-		// committing a letter mid-gesture.
+		// Motion gate: skip transitional frames (hand moving) so a letter never
+		// commits mid-transition. The threshold is generous on purpose: small
+		// trembles while talking must not block typing.
 		if (lastLm && lastLm.length === primary.landmarks.length) {
 			let s = 0;
 			for (let i = 0; i < primary.landmarks.length; i++) {
 				s += Math.hypot(primary.landmarks[i].x - lastLm[i].x, primary.landmarks[i].y - lastLm[i].y);
 			}
 			lastMotion = s / primary.landmarks.length;
-			if (lastMotion > 0.05) {
+			if (lastMotion > 0.065) {
 				lastLm = primary.landmarks;
+				stability = 0;
 				return;
 			}
 		}
 		lastLm = primary.landmarks;
-		// UI gestures take priority so they never pollute the letter stream.
+		// UI gestures and an active J/Z trace take priority over static letters.
 		if (primary.gesture === 'fist' || primary.gesture === 'peace') return;
-		if (t - lastJointAt >= 110 && engine.slots[0].status === 'ready') {
-			lastJointAt = t;
-			try {
-				const feats = landmarksToFeatures(primary.landmarks, vw, vh);
-				// Sample collector: same canonical vector the model sees.
-				if (collecting && t - lastCollectAt > 150) {
-					lastCollectAt = t;
-					collected = [...collected, { label: collectLetter, feat: Array.from(feats) }];
-					if (collected.length >= 2000) {
-						collecting = false;
-						flash('2000 sampel cukup. Unduh lalu latih ulang.');
-					}
+		// Skip static letters only while a J/Z stroke is genuinely underway.
+		// The threshold is well above normal finger tremor so D and I still
+		// type reliably when the hand is merely a little unsteady.
+		if (motionKind && trailNet(motionTrail, t, 350) > 0.06) return;
+		if (t < motionLetterUntil) return;
+
+		// One joint inference at a time. The rAF loop calls this every frame;
+		// without this guard a slow GPU stacks requests and the UI stutters.
+		// ~14 Hz on fast machines, slower when inference itself is slow.
+		const jointInterval = inferMs > 45 ? 110 : 70;
+		if (predictBusy || t - lastJointAt < jointInterval || engine.slots[0].status !== 'ready') return;
+		predictBusy = true;
+		lastJointAt = t;
+		try {
+			const feats = landmarksToFeatures(primary.landmarks, vw, vh);
+			// Sample collector: same canonical vector the model sees.
+			if (collecting && t - lastCollectAt > 150) {
+				lastCollectAt = t;
+				collected = [...collected, { label: collectLetter, feat: Array.from(feats) }];
+				if (collected.length >= 2000) {
+					collecting = false;
+					flash('2000 sampel cukup. Unduh lalu latih ulang.');
 				}
-				const out = await engine.predictJoint(feats);
-				if (out) {
-					inferMs = Math.round(out.latencyMs);
-					const baseAgree = baselineRes?.label === out.label;
-					const imgAgree = imageRes?.label === out.label;
-					let fused = out.confidence + (baseAgree ? 0.07 : 0) + (imgAgree ? 0.07 : 0);
-					fused = Math.min(0.99, fused);
-					fusedConf = fused;
-					if (t - lastUiAt > 150) {
-						lastUiAt = t;
-						jointLabel = out.label;
-						jointConf = out.confidence;
-						jointTop3 = out.top3;
-						featVec = Array.from(feats);
-					}
+			}
+			const out = await engine.predictJoint(feats);
+			if (out) {
+				inferMs = Math.round(out.latencyMs);
+				const baseAgree = baselineRes?.label === out.label;
+				const imgAgree = imageRes?.label === out.label;
+				let fused = out.confidence + (baseAgree ? 0.07 : 0) + (imgAgree ? 0.07 : 0);
+				fused = Math.min(0.99, fused);
+				if (t - lastUiAt > 120) {
+					lastUiAt = t;
+					jointLabel = out.label;
+					jointConf = out.confidence;
+					jointTop3 = out.top3;
+					featVec = Array.from(feats);
+				}
+				// Hand the frame to the temporal voter. A single frame never
+				// commits; the voter decides using consistency, confidence,
+				// adaptive hold time and cooldown.
+				if (out.confidence >= 0.18) {
+					const committed = smoother.push(out.label, fused, t);
 					stability = smoother.progress;
-					const margin =
-						out.top3.length > 1 ? out.top3[0].confidence - out.top3[1].confidence : 1;
-					// Confusing-alphabet guard: 50/50 frames never commit.
-					if (fused >= 0.4 && margin >= MARGIN_MIN) {
-						lowConfFrames = 0;
-						const committed = smoother.push(out.label, fused, t);
-						stability = smoother.progress;
-						if (committed) {
-							commitChar(committed);
+					if (committed) {
+						if (commitChar(committed)) {
 							recentChars = [...recentChars, committed].slice(-10);
 							flash(`Terkunci: ${committed}`);
 							lockedLetter = committed;
 							if (lockedTimer) clearTimeout(lockedTimer);
-							lockedTimer = setTimeout(() => (lockedLetter = ''), 1400);
+							lockedTimer = setTimeout(() => (lockedLetter = ''), 1200);
 						}
-					} else {
-						lowConfFrames++;
-						stability = 0;
 					}
 				}
-			} catch {
-				// one bad frame must never kill the loop
 			}
+		} catch {
+			// one bad frame must never kill the loop
+		} finally {
+			predictBusy = false;
 		}
 
 		// Path 2 (~4fps): baseline replica votes too, only if the user enabled it.
@@ -694,8 +790,8 @@
 		window.addEventListener('keydown', onKey);
 		(async () => {
 			history = await loadHistory();
-			minConf = await loadSetting('minConf', 0.4);
-			cooldownMs = await loadSetting('cooldownMs', 500);
+			minConf = await loadSetting('minConf', 0.24);
+			cooldownMs = await loadSetting('cooldownMs', 450);
 			grayscale = await loadSetting('grayscale', false);
 			useBaseline = await loadSetting('useBaseline', true);
 			useImage = await loadSetting('useImage', false);
@@ -714,7 +810,7 @@
 				// code-splits it; module types still let TS track engine fully.
 				const mod = await import('$lib/sibiClassifier');
 				engine = new mod.SibiEngine();
-				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 800 });
+				smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 700 });
 				// Show loading state immediately; engine mutates nested statuses.
 				for (const s of engine.slots) s.status = 'loading';
 				modelSlots = [...engine.slots];
@@ -752,8 +848,8 @@
 	});
 
 	async function restoreDefaults() {
-		minConf = 0.4;
-		cooldownMs = 500;
+		minConf = 0.24;
+		cooldownMs = 450;
 		grayscale = false;
 		normMode = 'neg-one-one';
 		useBaseline = true;
@@ -763,14 +859,14 @@
 		await saveSetting('grayscale', grayscale);
 		await saveSetting('useBaseline', true);
 		await saveSetting('useImage', false);
-		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 800 });
+		smoother = new (await import('$lib/sibiClassifier')).PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 700 });
 		lastLm = null;
 		flash('Pengaturan dipulihkan ke default');
 	}
 
 	async function onConfChange() {
 		const mod = await import('$lib/sibiClassifier');
-		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 800 });
+		smoother = new mod.PredictionSmoother({ minConfidence: minConf, cooldownMs, holdMs: 700 });
 		await saveSetting('minConf', minConf);
 		await saveSetting('cooldownMs', cooldownMs);
 		await saveSetting('grayscale', grayscale);
@@ -839,28 +935,34 @@
 			muted
 			autoplay
 		></video>
-		{#if camOn}
-			<div class="pointer-events-none absolute inset-0 z-[1] grid grid-cols-[1fr_2fr_1fr] text-center font-black uppercase">
-				<div class="flex items-center justify-center border-r-4 border-black/70 bg-[#FF90E8]/30 px-1 text-xs sm:text-sm">Kiri · hapus</div>
-				<div class="flex items-center justify-center border-x-2 border-black/40 bg-white/10 px-1 text-xs text-white sm:text-sm">Tengah · netral</div>
-				<div class="flex items-center justify-center border-l-4 border-black/70 bg-green-300/30 px-1 text-xs sm:text-sm">Kanan · ketik</div>
-			</div>
-		{/if}
 		<canvas
 			bind:this={overlayEl}
 			class="pointer-events-none absolute inset-0 h-full w-full {camOn ? '' : 'hidden'}"
 		></canvas>
 		{#if camOn}
 			{#if handsFound}
-				<div class="absolute top-3 right-3 z-10 rounded-2xl border-4 border-black bg-[#FFD02B] px-4 py-2 text-center shadow-[6px_6px_0_#000]">
-					<p class="font-display text-6xl leading-none sm:text-7xl">{jointLabel}</p>
-					<p class="mt-1 text-xs font-black uppercase">
-						{Math.round(jointConf * 100)}% · fusi {Math.round(fusedConf * 100)}%
+				<div class="absolute top-3 right-3 z-10 max-w-[48%] rounded-2xl border-4 border-black bg-[#FFD02B] px-3 py-2 text-center shadow-[6px_6px_0_#000] sm:px-4">
+					<p class="font-display text-5xl leading-none sm:text-6xl">{jointLabel}</p>
+					<p class="mt-1 text-[10px] font-black uppercase sm:text-xs">
+						{Math.round(jointConf * 100)}% · stabil {Math.round(stability * 100)}%
 					</p>
-					<div class="mt-1 h-2 w-28 overflow-hidden rounded-full border-2 border-black bg-white sm:w-36">
+					<div class="mx-auto mt-1 h-2.5 w-28 overflow-hidden rounded-full border-2 border-black bg-white sm:w-40">
 						<div class="h-full bg-green-500" style="width:{Math.round(stability * 100)}%"></div>
 					</div>
-					<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">stabil {Math.round(stability * 100)}%</p>
+					<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">
+						{stability >= 1 ? 'terkunci' : 'tahan sebentar'}
+					</p>
+					<div class="mt-1.5 flex justify-center gap-1">
+						{#each jointTop3 as c}
+							<button
+								onclick={() => pickLetter(c.label)}
+								class="rounded-md border-2 border-black bg-white px-2 py-0.5 text-xs font-black uppercase active:translate-y-0.5"
+								title="Klik untuk masukkan huruf {c.label}"
+							>
+								{c.label}
+							</button>
+						{/each}
+					</div>
 				</div>
 			{/if}
 			{#if handHint && !noSignal}
@@ -898,6 +1000,13 @@
 				{/if}
 				{#if prefix}
 					<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
+					<button
+						onclick={commitSpace}
+						class="sticker rounded-lg bg-black px-2 py-1 text-xs font-black uppercase text-[#FFD02B]"
+						title="Kunci kata sekarang"
+					>
+						Spasi
+					</button>
 				{/if}
 			</div>
 			{#if lockedLetter}
@@ -925,7 +1034,8 @@
 				<p class="text-5xl">Kamera</p>
 				<p class="font-display mt-3 text-xl uppercase">Kamera mati</p>
 				<p class="mx-auto mt-1 max-w-md text-sm opacity-80">
-					Nyalakan kamera, lalu peragakan isyarat alfabet SIBI statis. Tahan tiap isyarat sampai bilah stabil penuh.
+					Nyalakan kamera, lalu peragakan isyarat alfabet SIBI statis. Tahan sebentar
+					(sekitar 0,5-0,8 detik) sampai huruf terkunci. J dan Z dikenali dari gerakan.
 				</p>
 				{#if devices.length > 1}
 					<label class="mx-auto mt-3 flex max-w-md items-center gap-2 text-xs font-bold">
@@ -1004,8 +1114,18 @@
 				class="brutal-sm w-full rounded-xl bg-white px-3 py-2 text-lg font-black tracking-widest uppercase placeholder:text-sm placeholder:font-semibold placeholder:normal-case placeholder:opacity-40"
 			/>
 			<p class="mt-1 text-[11px] font-semibold opacity-60">
-				Keyboard: A-Z tambah huruf, Backspace hapus, Spasi kunci kata, Enter ucapkan.
+				Keyboard: A-Z tambah huruf, Backspace hapus, Spasi kunci kata, Enter ucapkan,
+				1-3 pilih prediksi.
 			</p>
+			<div class="mt-2 flex flex-wrap gap-2">
+				<button onclick={() => pickLetter('J')} class="brutal-btn rounded-lg bg-white px-3 py-1 text-xs font-black uppercase">
+					J (gerakan)
+				</button>
+				<button onclick={() => pickLetter('Z')} class="brutal-btn rounded-lg bg-white px-3 py-1 text-xs font-black uppercase">
+					Z (gerakan)
+				</button>
+				<span class="self-center text-[10px] font-semibold opacity-50">J/Z tidak ada di model statis: ucapkan gerakan atau klik.</span>
+			</div>
 		</div>
 		<div>
 			<p class="mb-2 text-[11px] font-bold tracking-widest uppercase opacity-60">
@@ -1150,8 +1270,8 @@
 					<li>Simulasi orang lain: 86-90%</li>
 				</ul>
 				<p class="mt-1 font-semibold opacity-90">
-					Bingkai ragu 50/50 (mis. M vs N) otomatis ditolak. J dan Z
-					dikecualikan karena butuh gerakan.
+					Bingkai ragu otomatis ditolak lewat voting waktu. J dan Z (isyarat dinamis)
+					dikenali dari jejak ujung jari, bukan model statis.
 				</p>
 			</div>
 			<div class="rounded-xl border-2 border-[#FFD02B] bg-[#1c1c1c] p-3">
