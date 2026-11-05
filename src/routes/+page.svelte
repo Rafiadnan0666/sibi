@@ -918,13 +918,14 @@
 	</div>
 </header>
 
-<main class="mx-auto max-w-6xl space-y-6 px-4 py-6">
+<main class="mx-auto max-w-10xl space-y-6 px-4 py-6">
 	{#if notice}
 		<div class="brutal rounded-xl bg-black px-4 py-2 text-center text-sm font-bold text-[#FFD02B]">
 			{notice}
 		</div>
 	{/if}
 
+	<div style="grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.85fr); height: 80vh;"  class="grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.85fr)]">
 <!-- CAMERA -->
 <section class="brutal-lg overflow-hidden rounded-2xl bg-white">
 	<div class="relative bg-[#111]">
@@ -1162,6 +1163,11 @@
 		</button>
 	</div>
 </section>
+	</div>
+
+	<div class="grid items-center gap-6 max-w-6xl mx-auto">
+
+	
 	<!-- GESTURES -->
 	<section class="brutal-lg rounded-2xl bg-white p-4">
 		<h2 class="font-display text-base uppercase sm:text-lg">Kontrol kamera <span class="text-xs font-bold normal-case opacity-60">(pengatur tombol, bukan isyarat SIBI)</span></h2>
@@ -1295,4 +1301,5 @@
 	<footer class="pb-8 text-center text-xs font-bold uppercase opacity-60">
 		SIBI Translator | SvelteKit + MediaPipe + TF.js + Web Speech API
 	</footer>
+	</div>
 </main>
