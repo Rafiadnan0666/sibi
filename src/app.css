@@ -11,6 +11,7 @@
 
 html {
 	scroll-behavior: smooth;
+	-webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -19,6 +20,35 @@ body {
 	background-size: 22px 22px;
 	color: #111111;
 	font-family: 'Space Grotesk', system-ui, sans-serif;
+	min-height: 100dvh;
+	overflow-x: clip;
+}
+
+button,
+select,
+input {
+	touch-action: manipulation;
+}
+
+button {
+	-webkit-tap-highlight-color: transparent;
+}
+
+:where(button, a, input, select):focus-visible {
+	outline: 3px solid #111111;
+	outline-offset: 3px;
+}
+
+code {
+	overflow-wrap: anywhere;
+}
+
+.no-scrollbar {
+	scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+	display: none;
 }
 
 .font-display {
@@ -48,9 +78,11 @@ body {
 		box-shadow 0.08s ease;
 }
 
-.brutal-btn:hover {
-	transform: translate(-1px, -1px);
-	box-shadow: 5px 5px 0 #111111;
+@media (hover: hover) {
+	.brutal-btn:hover {
+		transform: translate(-1px, -1px);
+		box-shadow: 5px 5px 0 #111111;
+	}
 }
 
 .brutal-btn:active {
@@ -72,4 +104,30 @@ body {
 
 video.mirror {
 	transform: scaleX(-1);
+}
+
+@media (max-width: 640px) {
+	.brutal {
+		box-shadow: 4px 4px 0 #111111;
+	}
+
+	.brutal-lg {
+		box-shadow: 5px 5px 0 #111111;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+
+	.brutal-btn {
+		transition: none;
+	}
+
+	.brutal-btn:hover,
+	.brutal-btn:active {
+		transform: none;
+		box-shadow: 4px 4px 0 #111111;
+	}
 }

@@ -361,7 +361,14 @@
 	}
 
 	async function openStream(): Promise<MediaStream> {
-		const base = { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
+		// Phones get a lighter capture stream: MediaPipe and TF.js share the
+		// same GPU, so 1280x720 on a small screen only adds heat and latency.
+		const compact = window.matchMedia('(max-width: 640px)').matches;
+		const base = {
+			width: { ideal: compact ? 960 : 1280 },
+			height: { ideal: compact ? 540 : 720 },
+			facingMode: 'user'
+		};
 		if (deviceId) {
 			try {
 				return await navigator.mediaDevices.getUserMedia({
@@ -889,19 +896,19 @@
 
 <!-- HEADER -->
 <header class="sticky top-0 z-40 border-b-4 border-black bg-[#FFD02B]">
-	<div class="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
-		<div class="brutal-sm flex h-11 w-11 items-center justify-center bg-white text-2xl"></div>
-		<div class="min-w-0">
-			<h1 class="font-display text-lg leading-none tracking-tight uppercase sm:text-2xl">
+	<div class="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3 lg:px-6">
+		<div class="brutal-sm flex h-9 w-9 shrink-0 items-center justify-center bg-white text-xl sm:h-11 sm:w-11 sm:text-2xl"></div>
+		<div class="min-w-0 flex-1">
+			<h1 class="font-display truncate text-base leading-none tracking-tight uppercase sm:text-2xl">
 				SIBI Translator
 			</h1>
-			<p class="text-xs font-semibold tracking-wide uppercase sm:text-sm">
+			<p class="truncate text-[10px] font-semibold tracking-wide uppercase sm:text-sm">
 				SIBI ke Bahasa Indonesia | 3 model aktif
 			</p>
 		</div>
-		<div class="ml-auto flex items-center gap-2">
+		<div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
 			<span
-				class="sticker rounded-full px-3 py-1 text-xs font-bold uppercase {readyCount === 3
+				class="sticker rounded-full px-2 py-1 text-[10px] font-bold uppercase sm:px-3 sm:text-xs {readyCount === 3
 					? 'bg-green-300'
 					: primaryReady
 						? 'bg-[#FFD02B]'
@@ -918,20 +925,20 @@
 	</div>
 </header>
 
-<main class="mx-auto max-w-10xl space-y-6 px-4 py-6">
+<main class="mx-auto max-w-7xl space-y-4 px-3 py-4 sm:space-y-6 sm:px-5 sm:py-6 lg:px-6">
 	{#if notice}
 		<div class="brutal rounded-xl bg-black px-4 py-2 text-center text-sm font-bold text-[#FFD02B]">
 			{notice}
 		</div>
 	{/if}
 
-	<div style="grid-template-columns: minmax(0, 1.25fr) minmax(20rem, 0.85fr); height: 80vh;"  class="grid items-start gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(20rem,0.85fr)]">
+	<div class="grid grid-cols-1 items-start gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)] xl:grid-cols-[minmax(0,1.3fr)_minmax(24rem,0.7fr)]">
 <!-- CAMERA -->
-<section class="brutal-lg overflow-hidden rounded-2xl bg-white">
+<section class="brutal-lg min-w-0 overflow-hidden rounded-2xl bg-white">
 	<div class="relative bg-[#111]">
 		<video
 			bind:this={videoEl}
-			class="mirror aspect-video max-h-[80vh] w-full object-cover {camOn ? '' : 'hidden'}"
+			class="mirror block aspect-video w-full bg-black object-cover {camOn ? '' : 'hidden'}"
 			playsinline
 			muted
 			autoplay
@@ -942,22 +949,22 @@
 		></canvas>
 		{#if camOn}
 			{#if handsFound}
-				<div class="absolute top-3 right-3 z-10 max-w-[48%] rounded-2xl border-4 border-black bg-[#FFD02B] px-3 py-2 text-center shadow-[6px_6px_0_#000] sm:px-4">
-					<p class="font-display text-5xl leading-none sm:text-6xl">{jointLabel}</p>
-					<p class="mt-1 text-[10px] font-black uppercase sm:text-xs">
+				<div class="absolute top-2 right-2 z-10 max-w-[48%] rounded-xl border-4 border-black bg-[#FFD02B] px-2.5 py-1.5 text-center shadow-[4px_4px_0_#000] sm:top-3 sm:right-3 sm:rounded-2xl sm:px-4 sm:py-2 sm:shadow-[6px_6px_0_#000]">
+					<p class="font-display text-4xl leading-none sm:text-6xl">{jointLabel}</p>
+					<p class="mt-0.5 text-[9px] font-black uppercase sm:mt-1 sm:text-xs">
 						{Math.round(jointConf * 100)}% · stabil {Math.round(stability * 100)}%
 					</p>
-					<div class="mx-auto mt-1 h-2.5 w-28 overflow-hidden rounded-full border-2 border-black bg-white sm:w-40">
+					<div class="mx-auto mt-1 h-2 w-24 overflow-hidden rounded-full border-2 border-black bg-white sm:h-2.5 sm:w-40">
 						<div class="h-full bg-green-500" style="width:{Math.round(stability * 100)}%"></div>
 					</div>
-					<p class="mt-0.5 text-[10px] font-bold uppercase opacity-70">
+					<p class="mt-0.5 text-[9px] font-bold uppercase opacity-70 sm:text-[10px]">
 						{stability >= 1 ? 'terkunci' : 'tahan sebentar'}
 					</p>
-					<div class="mt-1.5 flex justify-center gap-1">
+					<div class="mt-1 flex flex-wrap justify-center gap-1 sm:mt-1.5">
 						{#each jointTop3 as c}
 							<button
 								onclick={() => pickLetter(c.label)}
-								class="rounded-md border-2 border-black bg-white px-2 py-0.5 text-xs font-black uppercase active:translate-y-0.5"
+								class="min-h-8 min-w-8 rounded-md border-2 border-black bg-white px-1.5 py-0.5 text-[11px] font-black uppercase active:translate-y-0.5 sm:min-h-0 sm:min-w-0 sm:px-2 sm:text-xs"
 								title="Klik untuk masukkan huruf {c.label}"
 							>
 								{c.label}
@@ -967,13 +974,13 @@
 				</div>
 			{/if}
 			{#if handHint && !noSignal}
-				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-4 py-1.5 text-center text-xs font-black uppercase">
+				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FFD02B] px-2 py-1 text-center text-[10px] font-black uppercase sm:px-4 sm:py-1.5 sm:text-xs">
 					{handHint}
 				</div>
 			{/if}
 			{#if holdLabel}
-				<div class="absolute inset-x-0 top-0 z-20 border-b-4 border-black bg-white px-4 py-1.5">
-					<div class="flex items-center gap-2 text-xs font-black uppercase">
+				<div class="absolute inset-x-0 top-0 z-20 border-b-4 border-black bg-white px-2 py-1 sm:px-4 sm:py-1.5">
+					<div class="flex items-center gap-2 text-[10px] font-black uppercase sm:text-xs">
 						<span>{holdLabel === 'fist' ? 'Hapus' : 'Kunci kata'}</span>
 						<div class="h-2 flex-1 overflow-hidden rounded-full border-2 border-black bg-[#FFF6D6]">
 							<div class="h-full bg-[#FF90E8]" style="width:{Math.round(holdProgressUI * 100)}%"></div>
@@ -983,58 +990,36 @@
 				</div>
 			{/if}
 			{#if noSignal}
-				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FF90E8] px-4 py-2 text-center">
-					<p class="text-xs font-black uppercase">Stream kosong: tidak ada gambar</p>
-					<p class="text-[11px] font-bold">Kamera mungkin dipakai aplikasi lain atau salah perangkat.</p>
+				<div class="absolute inset-x-0 top-0 border-b-4 border-black bg-[#FF90E8] px-2 py-1.5 text-center sm:px-4 sm:py-2">
+					<p class="text-[10px] font-black uppercase sm:text-xs">Stream kosong: tidak ada gambar</p>
+					<p class="text-[10px] font-bold sm:text-[11px]">Kamera mungkin dipakai aplikasi lain atau salah perangkat.</p>
 				</div>
 			{/if}
-			<div class="absolute bottom-12 left-2 right-2 z-10 flex flex-wrap gap-1.5">
-				{#if words.length}
-					{#each words as w, i}
-						<span class="sticker flex items-center gap-1 rounded-lg bg-white/95 px-2 py-1 text-xs font-black uppercase {dragFrom === i ? 'opacity-50' : ''}">
-							<button onclick={() => moveWord(i, -1)} disabled={i === 0} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kiri">L</button>
-							<span>{w}</span>
-							<button onclick={() => removeWord(i)} class="rounded px-1 text-xs font-black opacity-60 hover:opacity-100" title="Hapus">x</button>
-							<button onclick={() => moveWord(i, 1)} disabled={i === words.length - 1} class="rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kanan">R</button>
-						</span>
-					{/each}
-				{/if}
-				{#if prefix}
-					<span class="sticker rounded-lg bg-[#FFD02B] px-2 py-1 text-xs font-black uppercase">{prefix}_</span>
-					<button
-						onclick={commitSpace}
-						class="sticker rounded-lg bg-black px-2 py-1 text-xs font-black uppercase text-[#FFD02B]"
-						title="Kunci kata sekarang"
-					>
-						Spasi
-					</button>
-				{/if}
-			</div>
 			{#if lockedLetter}
-				<div class="pointer-events-none absolute inset-0 grid place-items-center z-20">
-					<div class="rounded-2xl border-4 border-black bg-green-300 px-8 py-4 text-center shadow-[8px_8px_0_#000]">
-						<p class="font-display text-8xl leading-none">{lockedLetter}</p>
+				<div class="pointer-events-none absolute inset-0 z-20 grid place-items-center">
+					<div class="rounded-2xl border-4 border-black bg-green-300 px-6 py-3 text-center shadow-[6px_6px_0_#000] sm:px-8 sm:py-4 sm:shadow-[8px_8px_0_#000]">
+						<p class="font-display text-6xl leading-none sm:text-8xl">{lockedLetter}</p>
 						<p class="mt-1 text-xs font-black uppercase">Terkunci</p>
 					</div>
 				</div>
 			{/if}
-			<div class="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] font-bold">
-				<span class="sticker rounded-md bg-white px-2 py-0.5">FPS {fps}</span>
-				<span class="sticker rounded-md bg-white px-2 py-0.5">sendi {inferMs} ms</span>
-				<span class="sticker rounded-md px-2 py-0.5 {handsFound ? 'bg-green-300' : 'bg-[#FF90E8]'}">
+			<div class="absolute bottom-2 left-2 right-2 flex flex-wrap gap-1 text-[9px] font-bold sm:gap-1.5 sm:text-[11px]">
+				<span class="sticker rounded-md bg-white px-1.5 py-0.5 sm:px-2">FPS {fps}</span>
+				<span class="sticker rounded-md bg-white px-1.5 py-0.5 sm:px-2">sendi {inferMs} ms</span>
+				<span class="sticker rounded-md px-1.5 py-0.5 sm:px-2 {handsFound ? 'bg-green-300' : 'bg-[#FF90E8]'}">
 					{handsFound ? 'tangan OK' : 'cari tangan...'}
 				</span>
 				{#if gesture !== 'none' && GESTURE_META[gesture]}
-					<span class="sticker rounded-md bg-[#FFD02B] px-2 py-0.5">
+					<span class="sticker rounded-md bg-[#FFD02B] px-1.5 py-0.5 sm:px-2">
 						{GESTURE_META[gesture].icon} {GESTURE_META[gesture].label}
 					</span>
 				{/if}
 			</div>
 		{:else}
-			<div class="grid place-items-center px-6 py-16 text-center text-white">
-				<p class="text-5xl">Kamera</p>
-				<p class="font-display mt-3 text-xl uppercase">Kamera mati</p>
-				<p class="mx-auto mt-1 max-w-md text-sm opacity-80">
+			<div class="grid place-items-center px-4 py-10 text-center text-white sm:px-6 sm:py-16">
+				<p class="text-3xl sm:text-5xl">Kamera</p>
+				<p class="font-display mt-2 text-lg uppercase sm:mt-3 sm:text-xl">Kamera mati</p>
+				<p class="mx-auto mt-1 max-w-md text-xs opacity-80 sm:text-sm">
 					Nyalakan kamera, lalu peragakan isyarat alfabet SIBI statis. Tahan sebentar
 					(sekitar 0,5-0,8 detik) sampai huruf terkunci. J dan Z dikenali dari gerakan.
 				</p>
@@ -1068,13 +1053,37 @@
 			</div>
 		{/if}
 	</div>
-	<div class="flex items-center gap-2 border-t-4 border-black bg-white px-4 py-2">
+	{#if words.length || prefix}
+		<div class="no-scrollbar flex gap-1.5 overflow-x-auto overscroll-x-contain border-t-4 border-black bg-[#FFF6D6] px-2 py-2 sm:px-3">
+			{#if words.length}
+				{#each words as w, i}
+					<span class="sticker flex shrink-0 items-center gap-1 rounded-lg bg-white px-1.5 py-1 text-[11px] font-black uppercase sm:px-2 sm:text-xs {dragFrom === i ? 'opacity-50' : ''}">
+						<button onclick={() => moveWord(i, -1)} disabled={i === 0} class="flex min-h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kiri" aria-label="Geser kata ke kiri">←</button>
+						<span class="max-w-32 truncate">{w}</span>
+						<button onclick={() => removeWord(i)} class="flex min-h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-black opacity-60 hover:opacity-100" title="Hapus kata" aria-label="Hapus kata">×</button>
+						<button onclick={() => moveWord(i, 1)} disabled={i === words.length - 1} class="flex min-h-6 min-w-6 items-center justify-center rounded px-1 text-xs font-black disabled:opacity-30" title="Geser kanan" aria-label="Geser kata ke kanan">→</button>
+					</span>
+				{/each}
+			{/if}
+			{#if prefix}
+				<span class="sticker shrink-0 rounded-lg bg-[#FFD02B] px-2 py-1 text-[11px] font-black uppercase sm:text-xs">{prefix}_</span>
+				<button
+					onclick={commitSpace}
+					class="sticker min-h-7 shrink-0 rounded-lg bg-black px-2 py-1 text-[11px] font-black uppercase text-[#FFD02B] sm:text-xs"
+					title="Kunci kata sekarang"
+				>
+					Spasi
+				</button>
+			{/if}
+		</div>
+	{/if}
+	<div class="flex flex-wrap items-center gap-2 border-t-4 border-black bg-white px-3 py-2 sm:px-4">
 		{#if !camOn}
-			<button class="brutal-btn rounded-lg bg-black px-5 py-2 text-sm font-bold text-white" onclick={startCamera}>
+			<button class="brutal-btn w-full rounded-lg bg-black px-5 py-2.5 text-sm font-bold text-white sm:w-auto sm:py-2" onclick={startCamera}>
 				Nyalakan kamera
 			</button>
 		{:else}
-			<button class="brutal-btn rounded-lg bg-white px-5 py-2 text-sm font-bold" onclick={stopCamera}>
+			<button class="brutal-btn w-full rounded-lg bg-white px-5 py-2.5 text-sm font-bold sm:w-auto sm:py-2" onclick={stopCamera}>
 				Matikan
 			</button>
 		{/if}
@@ -1082,7 +1091,7 @@
 			<select
 				value={deviceId}
 				onchange={(e) => void switchCamera((e.target as HTMLSelectElement).value)}
-				class="min-w-0 flex-1 rounded-lg border-2 border-black bg-[#FFF6D6] px-2 py-1 text-xs font-bold"
+				class="min-w-0 flex-1 basis-full rounded-lg border-2 border-black bg-[#FFF6D6] px-2 py-2 text-xs font-bold sm:basis-auto"
 			>
 				{#each devices as d}
 					<option value={d.id}>{d.label}</option>
@@ -1093,120 +1102,120 @@
 </section>
 
 <!-- OUTPUT -->
-<section class="brutal-lg overflow-hidden rounded-2xl bg-white">
-	<div class="border-b-4 border-black bg-black px-4 py-3">
-		<h2 class="font-display text-base uppercase text-[#FFD02B] sm:text-lg">Kalimat Indonesia</h2>
+<section class="brutal-lg min-w-0 overflow-hidden rounded-2xl bg-white">
+	<div class="border-b-4 border-black bg-black px-3 py-2.5 sm:px-4 sm:py-3">
+		<h2 class="font-display text-sm uppercase text-[#FFD02B] sm:text-lg">Kalimat Indonesia</h2>
 	</div>
-	<div class="space-y-4 p-4">
-		<div class="brutal-sm rounded-xl bg-[#FFD02B] p-3">
-			<p class="text-[11px] font-bold tracking-widest uppercase opacity-70">Hasil kalimat</p>
-			<p class="font-display min-h-[2.5rem] text-xl leading-snug sm:text-2xl">
+	<div class="space-y-3 p-3 sm:space-y-4 sm:p-4">
+		<div class="brutal-sm rounded-xl bg-[#FFD02B] p-2.5 sm:p-3">
+			<p class="text-[10px] font-bold tracking-widest uppercase opacity-70 sm:text-[11px]">Hasil kalimat</p>
+			<p class="font-display min-h-[2.5rem] break-words text-lg leading-snug sm:text-2xl">
 				{sentence || 'Belum ada. Isyarat dulu di kamera, atau ketik di bawah.'}
 			</p>
 		</div>
 		<div>
-			<p class="mb-1.5 text-[11px] font-bold tracking-widest uppercase opacity-60">Ketik manual</p>
+			<p class="mb-1.5 text-[10px] font-bold tracking-widest uppercase opacity-60 sm:text-[11px]">Ketik manual</p>
 			<input
 				value={prefix}
 				oninput={onManual}
 				placeholder="Ketik huruf di sini (A-Z)"
 				maxlength={24}
 				autocomplete="off"
-				class="brutal-sm w-full rounded-xl bg-white px-3 py-2 text-lg font-black tracking-widest uppercase placeholder:text-sm placeholder:font-semibold placeholder:normal-case placeholder:opacity-40"
+				class="brutal-sm w-full rounded-xl bg-white px-3 py-2 text-base font-black tracking-widest uppercase placeholder:text-sm placeholder:font-semibold placeholder:normal-case placeholder:opacity-40 sm:text-lg"
 			/>
-			<p class="mt-1 text-[11px] font-semibold opacity-60">
+			<p class="mt-1 hidden text-[11px] font-semibold opacity-60 sm:block">
 				Keyboard: A-Z tambah huruf, Backspace hapus, Spasi kunci kata, Enter ucapkan,
 				1-3 pilih prediksi.
 			</p>
 			<div class="mt-2 flex flex-wrap gap-2">
-				<button onclick={() => pickLetter('J')} class="brutal-btn rounded-lg bg-white px-3 py-1 text-xs font-black uppercase">
+				<button onclick={() => pickLetter('J')} class="brutal-btn min-h-10 flex-1 rounded-lg bg-white px-3 py-2 text-xs font-black uppercase sm:flex-none sm:py-1">
 					J (gerakan)
 				</button>
-				<button onclick={() => pickLetter('Z')} class="brutal-btn rounded-lg bg-white px-3 py-1 text-xs font-black uppercase">
+				<button onclick={() => pickLetter('Z')} class="brutal-btn min-h-10 flex-1 rounded-lg bg-white px-3 py-2 text-xs font-black uppercase sm:flex-none sm:py-1">
 					Z (gerakan)
 				</button>
-				<span class="self-center text-[10px] font-semibold opacity-50">J/Z tidak ada di model statis: ucapkan gerakan atau klik.</span>
+				<span class="w-full self-center text-[10px] font-semibold opacity-50 sm:w-auto">J/Z tidak ada di model statis: ucapkan gerakan atau klik.</span>
 			</div>
 		</div>
 		<div>
 			<p class="mb-2 text-[11px] font-bold tracking-widest uppercase opacity-60">
 				Prediksi: {suggestion.mode} (klik untuk pilih)
 			</p>
-			<div class="grid grid-cols-3 gap-2">
+			<div class="grid grid-cols-3 gap-1.5 sm:gap-2">
 				{#each suggestion.suggestions as s, i}
 					<button
 						onclick={() => applySuggestion(s)}
-						class="brutal-btn rounded-xl bg-white px-2 py-2.5 text-sm font-black uppercase"
+						class="brutal-btn min-h-11 min-w-0 rounded-xl bg-white px-1.5 py-2 text-xs font-black uppercase sm:px-2 sm:py-2.5 sm:text-sm"
 					>
-						<span class="mr-1 rounded bg-black px-1.5 py-0.5 text-[11px] text-[#FFD02B]">{i + 1}</span>{s.word}
-						<span class="block text-[10px] font-semibold normal-case opacity-60">{s.why}</span>
+						<span class="mr-1 rounded bg-black px-1.5 py-0.5 text-[10px] text-[#FFD02B] sm:text-[11px]">{i + 1}</span>{s.word}
+						<span class="mt-0.5 block truncate text-[9px] font-semibold normal-case opacity-60 sm:text-[10px]">{s.why}</span>
 					</button>
 				{/each}
 			</div>
 		</div>
-		<div class="grid grid-cols-4 gap-2">
-			<button onclick={commitSpace} class="brutal-btn rounded-xl bg-white px-1 py-2 text-xs font-black uppercase">
+		<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+			<button onclick={commitSpace} class="brutal-btn min-h-11 rounded-xl bg-white px-2 py-2.5 text-xs font-black uppercase">
 				Spasi
 			</button>
-			<button onclick={deleteLast} class="brutal-btn rounded-xl bg-[#FF90E8] px-1 py-2 text-xs font-black uppercase">
+			<button onclick={deleteLast} class="brutal-btn min-h-11 rounded-xl bg-[#FF90E8] px-2 py-2.5 text-xs font-black uppercase">
 				Hapus
 			</button>
-			<button onclick={speak} class="brutal-btn rounded-xl bg-black px-1 py-2 text-xs font-black uppercase text-[#FFD02B]">
+			<button onclick={speak} class="brutal-btn min-h-11 rounded-xl bg-black px-2 py-2.5 text-xs font-black uppercase text-[#FFD02B]">
 				Ucapkan
 			</button>
-			<button onclick={() => void saveCurrent()} class="brutal-btn rounded-xl bg-[#7DF9FF] px-1 py-2 text-xs font-black uppercase">
+			<button onclick={() => void saveCurrent()} class="brutal-btn min-h-11 rounded-xl bg-[#7DF9FF] px-2 py-2.5 text-xs font-black uppercase">
 				Simpan
 			</button>
 		</div>
-		<button onclick={clearAll} class="brutal-btn w-full rounded-xl bg-white px-3 py-2 text-xs font-bold uppercase">
+		<button onclick={clearAll} class="brutal-btn min-h-10 w-full rounded-xl bg-white px-3 py-2.5 text-xs font-bold uppercase">
 			Bersihkan kalimat
 		</button>
 	</div>
 </section>
 	</div>
 
-	<div class="grid items-center gap-6 max-w-6xl mx-auto">
+	<div class="grid gap-4 sm:gap-6 lg:grid-cols-2">
 
 	
 	<!-- GESTURES -->
-	<section class="brutal-lg rounded-2xl bg-white p-4">
-		<h2 class="font-display text-base uppercase sm:text-lg">Kontrol kamera <span class="text-xs font-bold normal-case opacity-60">(pengatur tombol, bukan isyarat SIBI)</span></h2>
-		<div class="mt-3 grid grid-cols-3 gap-2">
+	<section class="brutal-lg min-w-0 rounded-2xl bg-white p-3 sm:p-4">
+		<h2 class="font-display text-sm uppercase sm:text-lg">Kontrol kamera <span class="block text-[10px] font-bold normal-case opacity-60 sm:inline sm:text-xs">(pengatur tombol, bukan isyarat SIBI)</span></h2>
+		<div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
 			{#each Object.entries(GESTURE_META) as [key, m]}
-				<div class="brutal-sm rounded-xl p-2 text-center text-xs font-bold {gesture === key ? 'bg-green-300' : 'bg-[#FFF6D6]'}">
-					<p class="text-2xl">{m.icon}</p>
+				<div class="brutal-sm rounded-xl p-2.5 text-center text-[11px] font-bold sm:text-xs {gesture === key ? 'bg-green-300' : 'bg-[#FFF6D6]'}">
+					<p class="text-xl sm:text-2xl">{m.icon}</p>
 					<p class="uppercase">{m.label}</p>
-					<p class="font-semibold normal-case opacity-60">{m.fn}</p>
+					<p class="text-[10px] font-semibold normal-case opacity-60 sm:text-xs">{m.fn}</p>
 				</div>
 			{/each}
 		</div>
-		<p class="mt-2 text-xs font-semibold opacity-70">
+		<p class="mt-2 text-[11px] font-semibold opacity-70 sm:text-xs">
 			Kartu yang menyala berarti gestur itu sedang terdeteksi. Huruf tidak masuk saat fist
 			atau peace ditahan, supaya aliran huruf tetap bersih.
 		</p>
 	</section>
 
 	<!-- HISTORY -->
-	<section class="brutal-lg rounded-2xl bg-white p-4">
-		<div class="flex items-center gap-3">
-			<h2 class="font-display text-base uppercase sm:text-lg">Riwayat (tersimpan lokal)</h2>
+	<section class="brutal-lg min-w-0 rounded-2xl bg-white p-3 sm:p-4">
+		<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+			<h2 class="font-display text-sm uppercase sm:text-lg">Riwayat (tersimpan lokal)</h2>
 			{#if history.length}
-				<button onclick={() => void clearHistory().then(() => (history = []))} class="brutal-btn ml-auto rounded-lg bg-white px-3 py-1 text-xs font-black uppercase">
+				<button onclick={() => void clearHistory().then(() => (history = []))} class="brutal-btn ml-auto rounded-lg bg-white px-2 py-1 text-[10px] font-black uppercase sm:px-3 sm:text-xs">
 					Hapus semua
 				</button>
 			{/if}
 		</div>
 		{#if history.length === 0}
-			<p class="mt-2 text-sm font-semibold opacity-60">Belum ada kalimat tersimpan. Ucapkan dulu, lalu Simpan.</p>
+			<p class="mt-2 text-xs font-semibold opacity-60 sm:text-sm">Belum ada kalimat tersimpan. Ucapkan dulu, lalu Simpan.</p>
 		{:else}
-			<ul class="mt-3 grid gap-2 sm:grid-cols-2">
+			<ul class="mt-3 grid gap-2">
 				{#each history as h}
-					<li class="brutal-sm flex items-center gap-2 rounded-xl bg-[#FFF6D6] px-3 py-2">
-						<button onclick={() => speakIndonesian(h.text)} class="min-w-0 flex-1 truncate text-left text-sm font-bold" title={h.text}>
+					<li class="brutal-sm flex min-w-0 items-center gap-2 rounded-xl bg-[#FFF6D6] px-2.5 py-2 sm:px-3">
+						<button onclick={() => speakIndonesian(h.text)} class="min-w-0 flex-1 truncate text-left text-xs font-bold sm:text-sm" title={h.text}>
 							{h.text}
 						</button>
-						<span class="shrink-0 text-[10px] font-bold opacity-50">{new Date(h.createdAt).toLocaleString('id-ID')}</span>
-						<button onclick={() => void deleteHistoryEntry(h.id).then((n: HistoryEntry[]) => (history = n))} class="brutal-btn shrink-0 rounded-md bg-white px-2 py-0.5 text-xs font-black" aria-label="hapus">x</button>
+						<span class="hidden shrink-0 text-[10px] font-bold opacity-50 sm:inline">{new Date(h.createdAt).toLocaleString('id-ID')}</span>
+						<button onclick={() => void deleteHistoryEntry(h.id).then((n: HistoryEntry[]) => (history = n))} class="brutal-btn flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md bg-white px-2 py-0.5 text-xs font-black" aria-label="Hapus riwayat">×</button>
 					</li>
 				{/each}
 			</ul>
@@ -1214,16 +1223,16 @@
 	</section>
 
 	<!-- MODEL STATUS -->
-	<section class="brutal-lg rounded-2xl bg-white p-4">
-		<div class="flex flex-wrap items-center gap-3">
-			<h2 class="font-display text-base uppercase sm:text-lg">Model ({readyCount}/3 siap)</h2>
-			<button onclick={() => void enableAllModels()} class="brutal-btn ml-auto rounded-lg bg-black px-3 py-1 text-xs font-black uppercase text-[#FFD02B]">
+	<section class="brutal-lg min-w-0 rounded-2xl bg-white p-3 sm:p-4 lg:col-span-2">
+		<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+			<h2 class="font-display text-sm uppercase sm:text-lg">Model ({readyCount}/3 siap)</h2>
+			<button onclick={() => void enableAllModels()} class="brutal-btn ml-auto rounded-lg bg-black px-2 py-1 text-[10px] font-black uppercase text-[#FFD02B] sm:px-3 sm:text-xs">
 				Nyalakan semua
 			</button>
 		</div>
 		{#if visionError}
 			<div class="mt-2 rounded-xl border-2 border-yellow-500 bg-yellow-100 p-3 text-xs font-bold">
-				<p>Tracking: {visionError}</p>
+				<p class="break-words">Tracking: {visionError}</p>
 				<button onclick={() => void retryVision()} class="brutal-btn mt-2 rounded-lg bg-[#FFD02B] px-3 py-1 text-xs font-black uppercase">
 					Coba tracking lagi
 				</button>
@@ -1231,8 +1240,8 @@
 		{/if}
 		<div class="mt-2 grid gap-2 sm:grid-cols-3">
 			{#each modelSlots as s}
-				<div class="brutal-sm rounded-xl p-3 text-xs font-bold {s.status === 'ready' ? 'bg-green-300' : s.status === 'loading' ? 'bg-[#FFD02B]' : s.status === 'error' ? 'bg-red-200' : 'bg-[#FFF6D6]'}">
-					<p class="font-display text-sm uppercase">{s.name} | val {s.valAcc}</p>
+				<div class="brutal-sm min-w-0 break-words rounded-xl p-2.5 text-xs font-bold sm:p-3 {s.status === 'ready' ? 'bg-green-300' : s.status === 'loading' ? 'bg-[#FFD02B]' : s.status === 'error' ? 'bg-red-200' : 'bg-[#FFF6D6]'}">
+					<p class="font-display text-xs uppercase sm:text-sm">{s.name} | val {s.valAcc}</p>
 					<p class="opacity-70">{s.credit}</p>
 					<p class="mt-1 uppercase">
 						{s.status === 'ready' ? 'Siap' : s.status === 'loading' ? 'Memuat...' : s.status === 'error' ? 'Gagal' : 'Mati'}
@@ -1251,9 +1260,9 @@
 	</section>
 
 	<!-- RESEARCH / DATASET -->
-	<section class="brutal-lg rounded-2xl bg-black p-4 text-white sm:p-6">
-		<h2 class="font-display text-base uppercase text-[#FFD02B] sm:text-lg">Data, model, dan angka evaluasi</h2>
-		<div class="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+	<section class="brutal-lg min-w-0 rounded-2xl bg-black p-3 text-white sm:p-6 lg:col-span-2">
+		<h2 class="font-display text-sm uppercase text-[#FFD02B] sm:text-lg">Data, model, dan angka evaluasi</h2>
+		<div class="mt-3 grid gap-3 text-xs sm:grid-cols-3 sm:text-sm">
 			<div class="rounded-xl border-2 border-[#FFD02B] bg-[#1c1c1c] p-3">
 				<p class="font-black uppercase text-[#FFD02B]">Data latih terbuka</p>
 				<p class="mt-1 font-semibold opacity-90">
@@ -1289,7 +1298,7 @@
 				</ul>
 			</div>
 		</div>
-		<div class="mt-3 rounded-xl border-2 border-dashed border-[#FFD02B] p-3 text-xs font-semibold opacity-90">
+		<div class="mt-3 break-words rounded-xl border-2 border-dashed border-[#FFD02B] p-2.5 text-[11px] font-semibold opacity-90 sm:p-3 sm:text-xs">
 			Reproduksi: <code>python python/retrain_joint.py</code> (+/-3 mnt CPU), lalu
 			<code>tensorflowjs_converter</code> ke <code>static/models/sibi-joint</code>.
 			Latih ulang di data Kaggle: <code>python python/train_sibi.py --data ./SIBI</code>
@@ -1298,7 +1307,7 @@
 		</div>
 	</section>
 
-	<footer class="pb-8 text-center text-xs font-bold uppercase opacity-60">
+	<footer class="pb-6 text-center text-[10px] font-bold uppercase opacity-60 sm:pb-8 sm:text-xs lg:col-span-2">
 		SIBI Translator | SvelteKit + MediaPipe + TF.js + Web Speech API
 	</footer>
 	</div>
